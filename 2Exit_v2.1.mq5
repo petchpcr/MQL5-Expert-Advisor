@@ -1,15 +1,15 @@
 //+------------------------------------------------------------------+
-//|                                                        2Exit.mq5 |
+//|                                                   2Exit_v2.1.mq5 |
 //|                                          Copyright 2025, LocalFX |
 //|                               https://www.facebook.com/LocalFX4U |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2025, LocalFX"
 #property link      "https://www.facebook.com/LocalFX4U"
-#property version   "1.00"
+#property version   "2.10"
 #property strict
 
 string Comp_Name     = "LocalFX";
-string EA_Name       = "2Exit";
+string EA_Name       = "2Exit_v2.1";
 
 long  MagicNumber    = 7020202;
 int   Slippage       = 5;
@@ -17,15 +17,11 @@ int   Slippage       = 5;
 // GU - TP:150 | DT:75 | Lot:0.05 | NetProfit:??% | MaxDD:??% | | MaxOrder:?? | Session:Tokyo
 input double Start_lot     = 0.01;
 double step_lot            = 0.01;
-double Minimum_profit      = 0;
-input int TP               = 200;
+input int Target           = 5;
 input int Distance         = 100;
-input int Stop_profit      = 5;
-input int Stop_at          = 5;
 bool Backtest_mode         = false;
 
 int middle_space           = 0;
-int _tp                    = 0;
 int _sl                    = 0;
 int _distance              = 0;
 
@@ -51,9 +47,12 @@ int      otherSymbolPending   = 0;
 int rsiHandle;
 
 // Bigest Order
-double            bigest_lot  = 0;
-ENUM_ORDER_TYPE   bigest_type = NULL;
-double            next_lot    = 0;
+long              fst_order_time  = 0;
+double            fst_order_lot   = 0;
+ENUM_ORDER_TYPE   fst_order_type  = NULL;
+
+long              fnl_order_time  = 0;
+ENUM_ORDER_TYPE   fnl_order_type  = NULL;
 
 // Buy
 int    countBuy      = 0;
@@ -134,22 +133,17 @@ int OnInit()
    LoadVariable();
 
    if(_Digits == 3) {
-      _tp = TP / 5;
       _distance = Distance / 5;
    } else if(_Digits == 4) {
-      _tp = TP / 7;
       _distance = Distance / 7;
    } else if(_Digits == 5) {
-      _tp = TP;
       _distance = Distance;
    } else {
-      _tp = TP;
       _distance = Distance;
    }
    
    //Minimum_profit = _tp * Start_lot;
    middle_space = _distance * 2;
-   _sl = middle_space + _tp;
 
    //rsiHandle = iRSI(_Symbol, PERIOD_CURRENT, 14, PRICE_MEDIAN);
 
@@ -226,10 +220,12 @@ void ScanOrders()
    ResetParamiter();
 
    // ================= Opening Orders =================
-   double first_lot_buy  = 0;
+   long   first_time_buy   = 0;
+   double first_lot_buy    = 0;
    double first_price_buy  = 0;
 
-   double first_lot_sell = 0;
+   long   first_time_sell  = 0;
+   double first_lot_sell   = 0;
    double first_price_sell = 0;
 
    for(int i = 0; i < PositionsTotal(); i++) // PositionsTotal() -> Opening
@@ -239,19 +235,36 @@ void ScanOrders()
       if(PositionSelectByTicket(ticket))
       {
          string symbol = PositionGetString(POSITION_SYMBOL);
-         if(symbol == _Symbol) {
+         long   magic  = PositionGetInteger(POSITION_MAGIC);
+         if(symbol == _Symbol && magic == MagicNumber) {
             double lot           = PositionGetDouble(POSITION_VOLUME);
             double price         = PositionGetDouble(POSITION_PRICE_OPEN);
             double take_profit   = PositionGetDouble(POSITION_TP);
             double stop_loss     = PositionGetDouble(POSITION_SL);
+            long   time_open     = PositionGetInteger(POSITION_TIME_MSC);
             ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)PositionGetInteger(POSITION_TYPE);
 
             maxLot = lot > maxLot ? lot : maxLot;
             
-            if(lot > bigest_lot)
+            // FIRST order
+            if(fst_order_time == 0) {
+               fst_order_time = time_open;
+               fst_order_lot  = lot;
+               fst_order_type = type;
+            } else if(time_open < fst_order_time) {
+               fst_order_time = time_open;
+               fst_order_lot  = lot;
+               fst_order_type = type;
+            }
+
+            // Last/Final order
+            if(fnl_order_time == 0) {
+               fnl_order_time = time_open;
+               fnl_order_type = type;
+            } else if(time_open > fnl_order_time)
             {
-               bigest_lot  = lot;
-               bigest_type = type;
+               fnl_order_time  = time_open;
+               fnl_order_type  = type;
             }
 
             if(type == ORDER_TYPE_BUY)
@@ -259,13 +272,15 @@ void ScanOrders()
                fcProfitBuy += ((take_profit - price) / _Point) * lot;
                fcLossBuy   += ((price - stop_loss) / _Point) * lot;
                
-               if(first_lot_buy == 0) {
-                  first_lot_buy     = lot;
-                  first_price_buy   = price;
+               if(first_time_buy == 0) {
+                  first_time_buy     = time_open;
+                  first_lot_buy      = lot;
+                  first_price_buy    = price;
                } else {
-                  if(lot < first_lot_buy) {
-                     first_lot_buy     = lot;
-                     first_price_buy   = price;
+                  if(time_open < first_time_buy) {
+                     first_time_buy     = time_open;
+                     first_lot_buy      = lot;
+                     first_price_buy    = price;
                   }
                }
 
@@ -277,11 +292,13 @@ void ScanOrders()
                fcProfitSell += ((price - take_profit) / _Point) * lot;
                fcLossSell   += ((stop_loss - price) / _Point) * lot;
 
-               if(first_lot_sell == 0) {
+               if(first_time_sell == 0) {
+                  first_time_sell    = time_open;
                   first_lot_sell     = lot;
                   first_price_sell   = price;
                } else {
-                  if(lot < first_lot_sell) {
+                  if(time_open < first_time_sell) {
+                     first_time_sell    = time_open;
                      first_lot_sell     = lot;
                      first_price_sell   = price;
                   }
@@ -298,6 +315,7 @@ void ScanOrders()
          }
       }
    }
+
    priceBuy  = first_price_buy;
    priceSell = first_price_sell;
    totalOpening  = (PositionsTotal() - otherSymbolOpening);
@@ -326,26 +344,20 @@ void ScanOrders()
    totalPending    = (OrdersTotal() - otherSymbolPending);
 
    // ================= Remove pending leftover =================
-   if((totalPending == 1 && pending_lot == bigest_lot) 
-   || (totalPending == 1 && pending_type == ORDER_TYPE_BUY_STOP && bigest_type == ORDER_TYPE_BUY)
-   || (totalPending == 1 && pending_type == ORDER_TYPE_SELL_STOP && bigest_type == ORDER_TYPE_SELL)
-   || (totalOpening == 0 && totalPending == 1)
-   ){
+   if((totalOpening == 1 && totalPending == 1) && (pending_lot == fst_order_lot)){
       ClearPending();
    }
 }
 
 bool CheckTargetProfit()
 {
-   if(Stop_profit > 0 && Stop_at > 0)
+   if(acc_profit >= Target)
    {
-      if(acc_profit >= Stop_profit && totalOpening >= Stop_at)
-      {
-         Print("-- Close all orders. The reason : Stop profit $" + IntegerToString(Stop_profit) + " --");
-         ClearOpening();
-         ClearPending();
-         return true;
-      }
+      Print("==== Close by Target ====");
+      ClearOpening();
+      ClearPending();
+      return true;
+      
    }
    return false;
 }
@@ -369,37 +381,30 @@ void PendingNextLot()
    }
 
    // Check lot size -> then Do pending
-   double profit_dummy = 0;
-   double lot_dummy = 0;
-   if(bigest_type == ORDER_TYPE_BUY)
+   double lot_dummy  = 0;
+   double _diff      = 0;
+   if(fnl_order_type == ORDER_TYPE_BUY)
    {
-      lot_dummy = sumLotSell;
-      double target_out = Minimum_profit > 0 ? fcLossBuy + Minimum_profit : fcLossBuy;
-
-      while (profit_dummy < target_out)
+      while (_diff < Start_lot)
       {
-         lot_dummy += step_lot;
-         profit_dummy = (lot_dummy * ((_tp - Slippage) - (avg_spread / _Point))) + fcProfitSell;
+         lot_dummy = lot_dummy == 0 ? Start_lot : lot_dummy + step_lot;
+         _diff     = (sumLotSell + lot_dummy) - sumLotBuy;
       }
       
-      //Print("=== SELL Next Lot: "+DoubleToString(lot_dummy, 2)+" | Profit: "+DoubleToString(profit_dummy, 2)+" | FC Loss Buy: "+DoubleToString(fcLossBuy, 2));
+      //Print("=== SELL Next Lot: "+DoubleToString(lot_dummy, 2));
       PendingSell(priceSell, lot_dummy, false);
 
-   } else if(bigest_type == ORDER_TYPE_SELL) {
+   } else if(fnl_order_type == ORDER_TYPE_SELL) {
 
-      lot_dummy = sumLotBuy;
-      double target_out = Minimum_profit > 0 ? fcLossSell + Minimum_profit : fcLossSell;
-
-      while (profit_dummy < target_out)
+      while (_diff < Start_lot)
       {
-         lot_dummy += step_lot;
-         profit_dummy = (lot_dummy * ((_tp - Slippage) - (avg_spread / _Point))) + fcProfitBuy;
+         lot_dummy = lot_dummy == 0 ? Start_lot : lot_dummy + step_lot;
+         _diff     = (sumLotBuy + lot_dummy) - sumLotSell;
       }
       
-      //Print("=== BUY Next Lot: "+DoubleToString(lot_dummy, 2)+" | Profit: "+DoubleToString(profit_dummy, 2)+" | FC Loss Sell: "+DoubleToString(fcLossSell, 2));
+      //Print("=== BUY Next Lot: "+DoubleToString(lot_dummy, 2));
       PendingBuy(priceBuy, lot_dummy, false);
    }
-   next_lot = lot_dummy;
 }
 
 void PendingBuy(double _price, double _lot, bool from_first)
@@ -407,8 +412,6 @@ void PendingBuy(double _price, double _lot, bool from_first)
    if((_ask + ((_distance / 2) * _Point)) > _price) return;
 
    double pending_price = from_first ? _price - avg_spread : _price;
-   double take_profit = pending_price + (_tp * _Point);
-   double stop_loss   = pending_price - (_sl * _Point) - (avg_spread + (Slippage * _Point));
 
    // prepare request/result
    MqlTradeRequest request;
@@ -423,8 +426,8 @@ void PendingBuy(double _price, double _lot, bool from_first)
    request.volume       = _lot;
    request.type         = ORDER_TYPE_BUY_STOP;
    request.price        = NormalizeDouble(pending_price, _Digits);
-   request.tp           = NormalizeDouble(take_profit, _Digits);
-   request.sl           = NormalizeDouble(stop_loss, _Digits);
+   request.tp           = 0.0;
+   request.sl           = 0.0;
    request.deviation    = Slippage;
    request.magic        = MagicNumber;
    request.type_filling = ORDER_FILLING_IOC;
@@ -451,8 +454,6 @@ void PendingSell(double _price, double _lot, bool from_first)
    if((_bid - ((_distance / 2) * _Point)) < _price) return;
 
    double pending_price = from_first ? _price + avg_spread : _price;
-   double take_profit = pending_price - (_tp * _Point);
-   double stop_loss   = pending_price + (_sl * _Point) + (avg_spread + (Slippage * _Point));
 
    // prepare request/result
    MqlTradeRequest request;
@@ -467,8 +468,8 @@ void PendingSell(double _price, double _lot, bool from_first)
    request.volume       = _lot;
    request.type         = ORDER_TYPE_SELL_STOP;
    request.price        = NormalizeDouble(pending_price, _Digits);
-   request.tp           = NormalizeDouble(take_profit, _Digits);
-   request.sl           = NormalizeDouble(stop_loss, _Digits);
+   request.tp           = 0.0;
+   request.sl           = 0.0;
    request.deviation    = Slippage;
    request.magic        = MagicNumber;
    request.type_filling = ORDER_FILLING_IOC;
@@ -651,32 +652,40 @@ void ResetParamiter()
    priceSell       = 0;
 
    // Casual
-   bigest_lot           = 0;
-   bigest_type          = NULL;
+   // fst_order_time       = 0;
+   // fst_order_lot        = 0;
+   // fst_order_type       = NULL;
+   
+   // fnl_order_time       = 0;
+   // fnl_order_type       = NULL;
+   
    otherSymbolOpening   = 0;
    otherSymbolPending   = 0;
 }
 
 void ShowComment()
 {  
-   string arw_buy       = (bigest_type == ORDER_TYPE_BUY && countBuy > 0) ? " <------------" : "";
-   string arw_sell      = (bigest_type == ORDER_TYPE_SELL && countSell > 0) ? " <------------" : "";
+   string arw_buy       = (fnl_order_type == ORDER_TYPE_BUY && countBuy > 0) ? " <------------" : "";
+   string arw_sell      = (fnl_order_type == ORDER_TYPE_SELL && countSell > 0) ? " <------------" : "";
    int show_spread      = (int)(_spread / _Point);
    int show_avg_spread  = (int)(avg_spread / _Point);
    int show_hst_spread  = (int)(hst_spread / _Point);
    long vol = iVolume(_Symbol, PERIOD_CURRENT, 1);
    
-   Comment("\n Symbol : " + _Symbol
+   Comment("\n " + EA_Name + " -> Symbol : " + _Symbol
            + "\n Account balance  :   " + NumberFormat((string)acc_balance)
            + "\n Account profit     :   " + NumberFormat((string)acc_profit)
            + "\n Net profit     :   " + NumberFormat((string)net_profit) + " | " + NumberFormat((string)net_profit_per) + "%"
            + "\n Total Opening : " + IntegerToString(totalOpening)
-           //+ "\n Total Pending : " + IntegerToString(totalPending)
-           + "\n Next Lot : " + DoubleToString(next_lot, 2)
-           + "\n iVolume : " + (string)vol
-           + "\n iRSI : " + (string)rsiHandle
-           + "\n iRSI : " + (string)currentRSI
-           + "\n iRSI : " + (string)prevRSI
+           + "\n Total Pending : " + IntegerToString(totalPending)
+           + "\n First Lot : " + DoubleToString(fst_order_lot)
+           + "\n First Type : " + IntegerToString(fst_order_type)
+           + "\n Last Time : " + IntegerToString(fnl_order_time)
+           + "\n Last Type : " + IntegerToString(fnl_order_type)
+           //+ "\n iVolume : " + (string)vol
+           //+ "\n iRSI : " + (string)rsiHandle
+           //+ "\n iRSI : " + (string)currentRSI
+           //+ "\n iRSI : " + (string)prevRSI
            //+ "\n Digits     :   " + DoubleToString(_Digits, 0)
 
            + "\n ================== BUY ================= " + arw_buy
@@ -702,5 +711,6 @@ void ShowComment()
            + "\n Max DD : " + NumberFormat((string)maxDrawDown) + " | " + NumberFormat((string)maxDD_Per) + "%"
            + "\n Max Orders : " + IntegerToString(maxOrders)
            + "\n Bigest Lot : " + DoubleToString(maxLot, 2)
+           + "\n ================ Statistic ==============="
           );
 }
