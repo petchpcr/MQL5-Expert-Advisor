@@ -6,13 +6,40 @@
 #property copyright "Copyright 2025, LocalFX"
 #property link "https://www.facebook.com/LocalFX4U"
 #property version "1.00"
+#property strict
+
+#define BTN1 "BTN_Auto_Remove"
+#define BTN2 "BTN_CLEAR_NOW"
+
+string ea_name = "Golden Hour";
+
+enum Position
+{
+   TOP_LEFT  = 0,
+   TOP_RIGHT = 3,
+   BOTTOM_LEFT = 1,
+   BOTTOM_RIGHT  = 2
+};
+
+const input string _____UI_Position_____ = "=========== UI Position ===========";
+input Position Button_Position = TOP_RIGHT; // ตำแหน่งของปุ่ม
+input Position Label_Position = TOP_LEFT; // ตำแหน่งของรายละเอียด
+
+const input string _____Auto_Remove_Order_____ = "======== Auto Remove Order ========";
+input bool Auto_Remove = false; // โหมดปิดออเดอร์อัตโนมัติ (เฉพาะออเดอร์ที่ปิดได้)
+bool FNC_Auto_Remove = false;
+input int Remove_At = 300; // ปิดอัตโนมัติ เมื่อออเดอร์ถึงจำนวน...
+input int Remove_Percent = 30; // จำนวนออเดอร์ที่ต้องการลบ (คิดเป็น % ของจำนวนที่กำหนดไว้)
+
+const input string _____Limit_Order_____ = "=========== Limit Order ===========";
+input bool Limit_Order = true; // จำกัดการออกออเดอร์ (สูงสุดที่ 300 ออเดอร์)
+int LimitAmount = 300;
+
+const input string _____Trading_____ = "============ Trading ============";
+input double Lot_Size = 0.01; // ขนาด Lot
+input double Target = 50.0; // Target
 
 int slipp = 20;
-input double InpLot = 0.01; // lot size per cycle
-input double Target = 50.0; // target profit in money
-input int MaxOrders = 300;
-input int RemovePercent = 30;
-
 int MustRemove = 0;
 int removed = 0;
 int removed_buy = 0;
@@ -25,6 +52,173 @@ double swapTotal = 0;
 
 double money_after_closed = 0; // V2
 double netTotal = 0;           // V3
+
+struct Button
+{
+  int index;
+  string name;
+  string text;
+  int width;
+  int higth;
+  int disX;
+  color clrText;
+  color clrBackground;
+
+  void setX(int newX)
+  {
+    disX = newX;
+  }
+};
+
+Button objButton[] = {
+  {1, BTN1, "Auto Clear", 130, 40, 0, clrWhite, clrMediumSeaGreen},
+  {2, BTN2, "Clear Now!", 130, 40, 0, clrWhite, clrMaroon},
+};
+
+//+------------------------------------------------------------------+
+//|   Label Class                                                    |
+//+------------------------------------------------------------------+
+class CLabel
+{
+public:
+   string name;
+   string text;
+   int    x, y;
+   color  clr;
+   int    fontSize;
+   string fontName;
+
+   CLabel()
+   {
+      name     = "";
+      text     = "";
+      x        = 0;
+      y        = 0;
+      clr      = clrWhite;
+      fontSize = 10;
+      fontName = "Arial";
+   }
+
+   bool Create(string _name, string _text, int _x, int _y)
+   {
+      name = _name;
+      text = _text;
+      x    = _x;
+      y    = _y;
+
+      if(!ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0))
+         return false;
+
+      ObjectSetString(0, name, OBJPROP_TEXT, text);
+      ObjectSetString(0, name, OBJPROP_FONT, fontName);
+      ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+
+      ObjectSetInteger(0, name, OBJPROP_CORNER, Label_Position);
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+
+      return true;
+   }
+
+
+   void SetText(string _text)
+   {
+      text = _text;
+      ObjectSetString(0, name, OBJPROP_TEXT, text);
+   }
+
+   void SetSize(int _size)
+   {
+      fontSize = _size;
+      ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
+   }
+
+   void SetColor(color _clr)
+   {
+      clr = _clr;
+      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
+   }
+
+   void MoveAll(int _x, int _y)
+   {
+      x = _x; y = _y;
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   }
+
+   void MoveX(int _x)
+   {
+      x = _x;
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+   }
+
+   void MoveY(int _y)
+   {
+      y = _y;
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
+   }
+   void Delete()
+   {
+      ObjectDelete(0, name);
+   }
+};
+
+//+------------------------------------------------------------------+
+//|   Manager Class                                                  |
+//+------------------------------------------------------------------+
+class CLabelManager
+{
+private:
+   CLabel *labels[];
+
+public:
+
+   int Add(string name, string text, int x, int y)
+   {
+      int n = ArraySize(labels);
+      ArrayResize(labels, n + 1);
+
+      labels[n] = new CLabel;
+      labels[n].Create(name, text, x, y);
+
+      return n;
+   }
+
+   CLabel* Get(int index)
+   {
+      if(index < 0 || index >= ArraySize(labels))
+         return NULL;
+
+      return labels[index];
+   }
+
+   void Delete(int index)
+   {
+      if(index < 0 || index >= ArraySize(labels))
+         return;
+
+      labels[index].Delete();
+      delete labels[index];
+   }
+
+   void DeleteAll()
+   {
+      for(int i=0; i < ArraySize(labels); i++)
+      {
+         labels[i].Delete();
+         delete labels[i];
+      }
+
+      ArrayResize(labels, 0);
+   }
+
+   int Count()
+   {
+      return ArraySize(labels);
+   }
+};
+
 
 struct KeyValue
 {
@@ -59,16 +253,26 @@ int TotalOrdersCount = 0;
 int BuyOrdersCount = 0;
 int SellOrdersCount = 0;
 
+double highest_loss = 0;
+double highest_profit = 0;
+
+// *** แกะ MVP การรวบแบบที่ 2 (คาดว่ารวบโดยใช้เส้น avg)
+// *** rebate per d/w/m
+// *** ตัวแปรเอาไว้บันทึกค่าหลังปิดโปรแกรม
+
 //+------------------------------------------------------------------+
 void ResetProfitParams()
 {
-  BuyProfitTotal  = 0.0;
+  BuyProfitTotal = 0.0;
   SellProfitTotal = 0.0;
-  NetProfitTotal  = 0.0;
+  NetProfitTotal = 0.0;
 
   TotalOrdersCount = 0;
-  BuyOrdersCount   = 0;
-  SellOrdersCount  = 0;
+  BuyOrdersCount = 0;
+  SellOrdersCount = 0;
+
+  highest_loss = 0;
+  highest_profit = 0;
 }
 
 double first_balance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -137,16 +341,50 @@ datetime GetLatestOrderOpenTime()
   return (lastOpenTime);
 }
 //+------------------------------------------------------------------+
-void CloseSideIfTargetReached()
+//| MQL4-style constants for compatibility                          |
+//+------------------------------------------------------------------+
+bool ClosePositionByTicket(int ticket, double lots)
 {
-  // work on latest totals
-  UpdateTotalsInPoints();
+  if (!PositionSelectByTicket(ticket))
+    return (false);
 
+  ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+  double price = (type == POSITION_TYPE_BUY)
+                     ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                     : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+
+  MqlTradeRequest request;
+  MqlTradeResult result;
+  ZeroMemory(request);
+  ZeroMemory(result);
+
+  request.action = TRADE_ACTION_DEAL;
+  request.symbol = _Symbol;
+  request.volume = lots;
+  request.price = price;
+  request.deviation = slipp;
+  request.position = ticket;
+  request.type = (type == POSITION_TYPE_BUY ? ORDER_TYPE_SELL : ORDER_TYPE_BUY);
+  request.type_filling = ORDER_FILLING_IOC;
+
+  if (!OrderSend(request, result))
+  {
+    PrintFormat("ClosePositionByTicket failed ticket=%d retcode=%d comment=%s",
+                ticket, result.retcode, result.comment);
+    return (false);
+  }
+  return (true);
+}
+
+//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
+bool CloseSideIfTargetReached()
+{
   bool closeBuys = (BuyProfitTotal >= Target);
   bool closeSells = (SellProfitTotal >= Target);
 
   if (!closeBuys && !closeSells)
-    return;
+    return false;
 
   const int total = PositionsTotal();
 
@@ -165,29 +403,31 @@ void CloseSideIfTargetReached()
         (type == POSITION_TYPE_SELL && closeSells))
     {
       double volume = PositionGetDouble(POSITION_VOLUME);
-      double price  = (type == POSITION_TYPE_BUY)
-                        ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
-                        : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double price = (type == POSITION_TYPE_BUY)
+                         ? SymbolInfoDouble(_Symbol, SYMBOL_BID)
+                         : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
       MqlTradeRequest request;
-      MqlTradeResult  result;
+      MqlTradeResult result;
       ZeroMemory(request);
       ZeroMemory(result);
 
-      request.action      = TRADE_ACTION_DEAL;
-      request.symbol      = _Symbol;
-      request.volume      = volume;
-      request.deviation   = 5;
-      request.type        = (type == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
-      request.price       = price;
-      request.position    = ticket;
-      request.type_filling= ORDER_FILLING_IOC;
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = volume;
+      request.deviation = 5;
+      request.type = (type == POSITION_TYPE_BUY) ? ORDER_TYPE_SELL : ORDER_TYPE_BUY;
+      request.price = price;
+      request.position = ticket;
+      request.type_filling = ORDER_FILLING_IOC;
 
       if (!OrderSend(request, result))
         PrintFormat("CloseSideIfTargetReached: close failed, ticket=%I64u retcode=%d comment=%s",
                     ticket, result.retcode, result.comment);
     }
   }
+
+  return true;
 }
 //+------------------------------------------------------------------+
 void UpdateTotalsInPoints()
@@ -207,6 +447,19 @@ void UpdateTotalsInPoints()
     ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
     double posProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
 
+    // loss (-)
+    if (posProfit < 0)
+    {
+      highest_loss = highest_loss == 0 ? posProfit : posProfit < highest_loss ? posProfit
+                                                                              : highest_loss;
+    }
+    // profit (+)
+    else if (posProfit > 0)
+    {
+      highest_profit = highest_profit == 0 ? posProfit : posProfit > highest_profit ? posProfit
+                                                                                    : highest_profit;
+    }
+
     if (type == POSITION_TYPE_BUY)
     {
       BuyProfitTotal += posProfit;
@@ -223,6 +476,7 @@ void UpdateTotalsInPoints()
 
   NetProfitTotal = BuyProfitTotal + SellProfitTotal;
 }
+
 void OpenPairOrders(const double lot)
 {
   MqlTradeRequest request;
@@ -259,38 +513,186 @@ void CheckAndOpenOrders()
   const datetime currentBarOpen = iTime(_Symbol, currentTf, 0);
   const datetime lastOrderOpen = GetLatestOrderOpenTime();
 
-  PrintFormat("DEBUG: TF=%d currentBarOpen=%s lastOrderOpen=%s",
-              currentTf,
-              TimeToString(currentBarOpen, TIME_DATE | TIME_SECONDS),
-              TimeToString(lastOrderOpen, TIME_DATE | TIME_SECONDS));
+  // PrintFormat("DEBUG: TF=%d currentBarOpen=%s lastOrderOpen=%s",
+  //             currentTf,
+  //             TimeToString(currentBarOpen, TIME_DATE | TIME_SECONDS),
+  //             TimeToString(lastOrderOpen, TIME_DATE | TIME_SECONDS));
 
   if (lastOrderOpen >= currentBarOpen)
   {
-    Print("DEBUG: Skip open – lastOrderOpen >= currentBarOpen");
+    // Print("DEBUG: Skip open – lastOrderOpen >= currentBarOpen");
     return;
   }
 
-  Print("DEBUG: OpenPairOrders(InpLot) called");
-  OpenPairOrders(InpLot);
+  // Print("DEBUG: OpenPairOrders(Lot_Size) called");
+  OpenPairOrders(Lot_Size);
 }
 //+------------------------------------------------------------------+
 string NumberFormat(string val)
 {
-   string s = StringFormat("%.2f", MathAbs((double)val));
-   int dot = StringFind(s, ".");
-   for(int i = (dot == -1 ? StringLen(s) : dot) - 3; i > 0; i -= 3)
-      s = StringSubstr(s, 0, i) + "," + StringSubstr(s, i);
-   if((double)val < 0) s = "-" + s;
-   
-   return s;
+  string s = StringFormat("%.2f", MathAbs((double)val));
+  int dot = StringFind(s, ".");
+  for (int i = (dot == -1 ? StringLen(s) : dot) - 3; i > 0; i -= 3)
+    s = StringSubstr(s, 0, i) + "," + StringSubstr(s, i);
+  if ((double)val < 0)
+    s = "-" + s;
+
+  return s;
 }
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
+CLabelManager LM;
+int lb_band,lb_fb,lb_t_acc,lb_ab,lb_ap,lb_t_res,lb_np,lb_dd,lb_t_cas,lb_od,lb_pf;
+
 int OnInit()
 {
-  MustRemove = (int)MathCeil((MaxOrders * RemovePercent) /100);
+  MustRemove = (int)MathCeil((Remove_At * Remove_Percent) / 100);
+  FNC_Auto_Remove = Auto_Remove;
+
+  CreateLabel();
+  SortObject();
+  RefreshButton(objButton[0], FNC_Auto_Remove);
+  RefreshButton(objButton[1], false);
+
   return (INIT_SUCCEEDED);
+}
+
+void CreateLabel()
+{
+  
+  if(Label_Position == TOP_LEFT || Label_Position == TOP_RIGHT)
+  {
+    lb_band     = LM.Add("lb_band", "Local FX - "+ea_name, 10, 20);
+    lb_fb       = LM.Add("lb_fb", "www.facebook.com/LocalFX4U", 10, 43);
+    lb_t_acc    = LM.Add("lb_t_acc", "=========== Account ===========", 10, 65);
+    lb_ab       = LM.Add("lb_ab", "-", 10, 80);
+    lb_ap       = LM.Add("lb_ap", "-", 10, 95);
+    lb_t_res    = LM.Add("lb_t_res", "============ Result ============", 10, 110);
+    lb_np       = LM.Add("lb_np", "-", 10, 125);
+    lb_dd       = LM.Add("lb_dd", "-", 10, 140);
+    lb_t_cas    = LM.Add("lb_t_cas", "============ Casual ============", 10, 155);
+    lb_od       = LM.Add("lb_od", "-", 10, 170);
+    lb_pf       = LM.Add("lb_pf", "-", 10, 185);
+  } 
+  else if (Label_Position == BOTTOM_LEFT || Label_Position == BOTTOM_RIGHT)
+  {
+    lb_band     = LM.Add("lb_band", "Local FX - "+ea_name, 10, 195);
+    lb_fb       = LM.Add("lb_fb", "www.facebook.com/LocalFX4U", 10, 173);
+    lb_t_acc    = LM.Add("lb_t_acc", "=========== Account ===========", 10, 155);
+    lb_ab       = LM.Add("lb_ab", "-", 10, 140);
+    lb_ap       = LM.Add("lb_ap", "-", 10, 125);
+    lb_t_res    = LM.Add("lb_t_res", "============ Result ============", 10, 110);
+    lb_np       = LM.Add("lb_np", "-", 10, 95);
+    lb_dd       = LM.Add("lb_dd", "-", 10, 80);
+    lb_t_cas    = LM.Add("lb_t_cas", "============ Casual ============", 10, 65);
+    lb_od       = LM.Add("lb_od", "-", 10, 50);
+    lb_pf       = LM.Add("lb_pf", "-", 10, 35);
+  }
+  
+
+  LM.Get(lb_band).SetSize(15);
+  LM.Get(lb_band).SetColor(clrDeepSkyBlue);
+  LM.Get(lb_fb).SetColor(clrGoldenrod);
+  LM.Get(lb_t_acc).SetColor(clrLightSlateGray);
+  LM.Get(lb_t_res).SetColor(clrLightSlateGray);
+  LM.Get(lb_t_cas).SetColor(clrLightSlateGray);
+}
+
+void SortObject()
+{
+  // ------------- Label -------------
+  if(Label_Position == Button_Position)
+  {
+    for (int i = 0; i < LM.Count(); i++)
+    {
+      LM.Get(i).MoveY(LM.Get(i).y + 60);
+    }
+  } 
+
+  int lbX = 0;
+  if(Label_Position == TOP_RIGHT || Label_Position == BOTTOM_RIGHT)
+  {
+    for (int i = 0; i < LM.Count(); i++)
+    {
+      LM.Get(i).MoveX(LM.Get(i).x + 240);
+      if(Label_Position == BOTTOM_RIGHT && Label_Position != Button_Position)
+      {
+        LM.Get(i).MoveY(LM.Get(i).y + 20);
+      }
+    }
+  }
+  else if(Label_Position == BOTTOM_LEFT && Label_Position != Button_Position)
+  {
+    for (int i = 0; i < LM.Count(); i++)
+    {
+      LM.Get(i).MoveY(LM.Get(i).y + 20);
+    }
+  }
+  
+  // ------------- Button -------------
+  int btnX = 0;
+  int space = 10;
+
+  if(Button_Position == TOP_LEFT || Button_Position == BOTTOM_LEFT)
+  {
+    for (int i = 0; i < ArraySize(objButton); i++)
+    {
+      btnX += space;
+      if(i > 0)
+        btnX += objButton[i-1].width;
+      
+      objButton[i].disX = btnX;
+    }
+  } 
+  else if(Button_Position == TOP_RIGHT || Button_Position == BOTTOM_RIGHT)
+  {
+    for (int i = ArraySize(objButton) - 1; i >= 0; i--)
+    {
+      btnX = objButton[i].width + space;
+
+      if(i < ArraySize(objButton) - 1)
+        btnX += objButton[i+1].disX;
+      
+      objButton[i].disX = btnX;
+    }
+  }
+}
+
+void RefreshButton(Button &btn, bool key)
+{
+  string btnText = btn.text;
+  color clrText = btn.clrText;
+  color clrBg = btn.clrBackground;
+
+  if (btn.name == BTN1)
+  {
+    btnText += key ? " [ON]" : " [OFF]";
+    clrText = key ? clrText : clrDimGray;
+    clrBg = key ? clrBg : clrDarkGray;
+  }
+  else if (btn.name == BTN2)
+  {
+  }
+
+  CreateButton(btn, btnText, clrText, clrBg);
+}
+
+void OnDeinit(const int reason)
+{
+  ObjectDelete(0, BTN1);
+  ObjectDelete(0, BTN2);
+  LM.DeleteAll();
+}
+
+void UpdateLabels()
+{
+  LM.Get(lb_ab).SetText("Account balance: "+NumberFormat((string)AccountInfoDouble(ACCOUNT_BALANCE)));
+  LM.Get(lb_ap).SetText("Account profit: "+NumberFormat((string)acc_profit));
+  LM.Get(lb_np).SetText("Net profit: "+NumberFormat((string)net_profit)+" | "+NumberFormat((string)net_profit_per)+"%");
+  LM.Get(lb_dd).SetText("Max DD: "+NumberFormat((string)maxDrawDown)+"  | "+NumberFormat((string)maxDD_Per)+"%");
+  LM.Get(lb_od).SetText("Order Total: "+(string)TotalOrdersCount+" Buy: "+(string)BuyOrdersCount+" Sell: "+(string)SellOrdersCount);
+  LM.Get(lb_pf).SetText("Net Profit: "+DoubleToString(NetProfitTotal, 1)+" Buy: "+DoubleToString(BuyProfitTotal, 1)+" Sell: "+DoubleToString(SellProfitTotal, 1));
 }
 
 void OnTick()
@@ -309,24 +711,23 @@ void OnTick()
 
   ResetProfitParams();
   UpdateTotalsInPoints();
-  CloseSideIfTargetReached();
-  Comment(
-      "================ Account ===============\n",
-      "Account balance: ", NumberFormat((string)AccountInfoDouble(ACCOUNT_BALANCE)), "\n",
-      "Account profit: ", NumberFormat((string)acc_profit), "\n",
-      "================ Result ===============\n",
-      "Net profit:   " + NumberFormat((string)net_profit), " | ", NumberFormat((string)net_profit_per), "%\n",
-      "Max DD:   " + NumberFormat((string)maxDrawDown), " | ", NumberFormat((string)maxDD_Per), "%\n",
-      "================ Casual ===============\n",
-      "TotalOrders: ", TotalOrdersCount,
-      "  BuyOrders: ", BuyOrdersCount,
-      "  SellOrders: ", SellOrdersCount, "\n",
-      "BuyProfitTotal: ", DoubleToString(BuyProfitTotal, 1),
-      "  SellProfitTotal: ", DoubleToString(SellProfitTotal, 1),
-      "  NetProfitTotal: ", DoubleToString(NetProfitTotal, 1));
-  CheckAndOpenOrders();
-}
+  UpdateLabels();
 
+  if(CloseSideIfTargetReached())
+  {
+    return;
+  }
+  
+  if (TotalOrdersCount >= Remove_At && FNC_Auto_Remove)
+  {
+    CloseOrderConditions();
+  }
+
+  if (!(Limit_Order && TotalOrdersCount >= LimitAmount))
+  {
+    CheckAndOpenOrders();
+  }
+}
 
 void ResetParams()
 {
@@ -346,27 +747,50 @@ void ResetParams()
   netTotal = 0;           // V3
 }
 
+void CloseOrderConditions()
+{
+  ResetParams();
+  double res = MathAbs(highest_loss) / highest_profit;
+  if (res < 2)
+  {
+    ProcessCloseV2();
+  }
+  else
+  {
+    ProcessCloseV3();
+  }
+  ResetParams();
+}
+
 //+------------------------------------------------------------------+
 //| Process Auto Close V2 Logic                                      |
 //+------------------------------------------------------------------+
 void ProcessCloseV2()
 {
-  string txt_name = script_name + " | Type: 2";
+  string txt_name = ea_name + " | Type: 2";
   // -------------------------------------------------------
   // ( 1 ) This loop for get all loss profit(-).
   // -------------------------------------------------------
-  for (int i = 0; i < OrdersTotal(); i++)
+  for (int i = 0; i < PositionsTotal(); i++)
   {
-    if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES) && OrderSymbol() == Symbol())
+    ulong ticket = PositionGetTicket(i);
+    if (ticket == 0 || !PositionSelectByTicket(ticket))
+      continue;
+
+    if (PositionGetString(POSITION_SYMBOL) != _Symbol)
+      continue;
+
+    ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+    if (posType == POSITION_TYPE_BUY || posType == POSITION_TYPE_SELL)
     {
-      if (OrderType() == OP_BUY || OrderType() == OP_SELL)
+      double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      // loss (-)
+      if (profit < 0)
       {
-        double profit = OrderProfit() + OrderSwap();
-        // loss (-)
-        if (profit < 0)
-        {
-          InsertArrayLoss("ASC", OrderTicket(), OrderType(), OrderLots(), profit, OrderSwap());
-        }
+        int posTicket = (int)ticket;
+        double lots = PositionGetDouble(POSITION_VOLUME);
+        double swap = PositionGetDouble(POSITION_SWAP);
+        InsertArrayLoss("ASC", posTicket, (int)posType, lots, profit, swap);
       }
     }
   }
@@ -392,19 +816,27 @@ void ProcessCloseV2()
     ArrayResize(arrProfit, 0);
     double sum_all_profit = 0;
 
-    for (int i = 0; i < OrdersTotal(); i++)
+    for (int i = 0; i < PositionsTotal(); i++)
     {
-      if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES) && OrderSymbol() == Symbol())
+      ulong ticket = PositionGetTicket(i);
+      if (ticket == 0 || !PositionSelectByTicket(ticket))
+        continue;
+
+      if (PositionGetString(POSITION_SYMBOL) != _Symbol)
+        continue;
+
+      ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      if (posType == POSITION_TYPE_BUY || posType == POSITION_TYPE_SELL)
       {
-        if (OrderType() == OP_BUY || OrderType() == OP_SELL)
+        double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+        // profit (+)
+        if (profit > 0)
         {
-          double profit = OrderProfit() + OrderSwap();
-          // profit (+)
-          if (profit > 0)
-          {
-            sum_all_profit = sum_all_profit + profit;
-            InsertArrayProfit("DESC", OrderTicket(), OrderType(), OrderLots(), profit, OrderSwap());
-          }
+          int posTicket = (int)ticket;
+          double lots = PositionGetDouble(POSITION_VOLUME);
+          double swap = PositionGetDouble(POSITION_SWAP);
+          sum_all_profit = sum_all_profit + profit;
+          InsertArrayProfit("DESC", posTicket, (int)posType, lots, profit, swap);
         }
       }
     }
@@ -473,12 +905,11 @@ void ProcessCloseV2()
       // Start delete order 1 by 1
       for (int i = 0; i < ArraySize(arrDelete); i++)
       {
-        double price_ = arrDelete[i].type == OP_BUY ? Bid : Ask;
-        if (OrderClose(arrDelete[i].ticket, arrDelete[i].lotsize, price_, slipp))
+        if (ClosePositionByTicket(arrDelete[i].ticket, arrDelete[i].lotsize))
         {
-          if (arrDelete[i].type == OP_BUY)
+          if (arrDelete[i].type == POSITION_TYPE_BUY)
             removed_buy++;
-          else if (arrDelete[i].type == OP_SELL)
+          else if (arrDelete[i].type == POSITION_TYPE_SELL)
             removed_sell++;
 
           removed++;
@@ -495,7 +926,7 @@ void ProcessCloseV2()
     ArrayResize(arrDummy, 0);
     ArrayResize(arrDelete, 0);
 
-    if (removed >= mustRemove)
+    if (removed >= MustRemove)
     {
       break;
     }
@@ -515,27 +946,36 @@ void ProcessCloseV2()
     double sum_all_loss = 0;
     ArrayResize(arrLoss, 0);
 
-    for (int i = 0; i < OrdersTotal(); i++)
+    for (int i = 0; i < PositionsTotal(); i++)
     {
-      if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES) && OrderSymbol() == Symbol())
-      {
-        if (OrderType() == OP_BUY || OrderType() == OP_SELL)
-        {
-          double profit = OrderProfit() + OrderSwap();
-          // loss (-)
-          if (profit < 0)
-          {
-            sum_all_loss = sum_all_loss + profit;
+      ulong ticket = PositionGetTicket(i);
+      if (ticket == 0 || !PositionSelectByTicket(ticket))
+        continue;
 
-            if (MathAbs(sum_all_loss) <= money_after_closed)
-            {
-              lossTotal2 = lossTotal2 + profit;
-              InsertArrayLoss("ASC", OrderTicket(), OrderType(), OrderLots(), profit, OrderSwap());
-            }
-            else
-            {
-              sum_all_loss = sum_all_loss - profit;
-            }
+      if (PositionGetString(POSITION_SYMBOL) != _Symbol)
+        continue;
+
+      ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      if (posType == POSITION_TYPE_BUY || posType == POSITION_TYPE_SELL)
+      {
+        double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+        // loss (-)
+        if (profit < 0)
+        {
+          sum_all_loss = sum_all_loss + profit;
+
+          if (MathAbs(sum_all_loss) <= money_after_closed)
+          {
+            int posTicket = (int)ticket;
+            double lots = PositionGetDouble(POSITION_VOLUME);
+            double swap = PositionGetDouble(POSITION_SWAP);
+
+            lossTotal2 = lossTotal2 + profit;
+            InsertArrayLoss("ASC", posTicket, (int)posType, lots, profit, swap);
+          }
+          else
+          {
+            sum_all_loss = sum_all_loss - profit;
           }
         }
       }
@@ -544,12 +984,11 @@ void ProcessCloseV2()
     // Start delete order 1 by 1
     for (int i = 0; i < ArraySize(arrLoss); i++)
     {
-      double price_ = arrLoss[i].type == OP_BUY ? Bid : Ask;
-      if (OrderClose(arrLoss[i].ticket, arrLoss[i].lotsize, price_, slipp))
+      if (ClosePositionByTicket(arrLoss[i].ticket, arrLoss[i].lotsize))
       {
-        if (arrLoss[i].type == OP_BUY)
+        if (arrLoss[i].type == POSITION_TYPE_BUY)
           removed_buy++;
-        else if (arrLoss[i].type == OP_SELL)
+        else if (arrLoss[i].type == POSITION_TYPE_SELL)
           removed_sell++;
 
         removed++;
@@ -752,7 +1191,7 @@ void InsertArrayProfit(string format, int ticket, int type, double lot, double p
 //+------------------------------------------------------------------+
 void ProcessCloseV3()
 {
-  string txt_name = script_name + " | Type: 3";
+  string txt_name = ea_name + " | Type: 3";
 
   CreateDummy();
 
@@ -780,12 +1219,11 @@ void ProcessCloseV3()
     // Delete loss(-)
     for (int i = 0; i < ArraySize(arrDelete); i++)
     {
-      double price_ = arrDelete[i].type == OP_BUY ? Bid : Ask;
-      if (OrderClose(arrDelete[i].ticket, arrDelete[i].lotsize, price_, slipp))
+      if (ClosePositionByTicket(arrDelete[i].ticket, arrDelete[i].lotsize))
       {
-        if (arrDelete[i].type == OP_BUY)
+        if (arrDelete[i].type == POSITION_TYPE_BUY)
           removed_buy++;
-        else if (arrDelete[i].type == OP_SELL)
+        else if (arrDelete[i].type == POSITION_TYPE_SELL)
           removed_sell++;
 
         lossTotal = lossTotal + arrDelete[i].profit;
@@ -801,12 +1239,11 @@ void ProcessCloseV3()
     // Delete profit(+)
     for (int i = 0; i < ArraySize(arrProfit); i++)
     {
-      double price_ = arrProfit[i].type == OP_BUY ? Bid : Ask;
-      if (OrderClose(arrProfit[i].ticket, arrProfit[i].lotsize, price_, slipp))
+      if (ClosePositionByTicket(arrProfit[i].ticket, arrProfit[i].lotsize))
       {
-        if (arrProfit[i].type == OP_BUY)
+        if (arrProfit[i].type == POSITION_TYPE_BUY)
           removed_buy++;
-        else if (arrProfit[i].type == OP_SELL)
+        else if (arrProfit[i].type == POSITION_TYPE_SELL)
           removed_sell++;
 
         swapTotal = swapTotal + arrProfit[i].swap;
@@ -827,26 +1264,35 @@ void ProcessCloseV3()
 void CreateDummy()
 {
   // Put loss(-) orders in 2D Array, And insert order by DESC
-  for (int i = 0; i < OrdersTotal(); i++)
+  for (int i = 0; i < PositionsTotal(); i++)
   {
-    if (OrderSelect(i, SELECT_BY_POS, MODE_TRADES) && OrderSymbol() == Symbol())
+    ulong ticket = PositionGetTicket(i);
+    if (ticket == 0 || !PositionSelectByTicket(ticket))
+      continue;
+
+    if (PositionGetString(POSITION_SYMBOL) != _Symbol)
+      continue;
+
+    ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+    if (posType == POSITION_TYPE_BUY || posType == POSITION_TYPE_SELL)
     {
-      if (OrderType() == OP_BUY || OrderType() == OP_SELL)
+      double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+
+      int posTicket = (int)ticket;
+      double lots = PositionGetDouble(POSITION_VOLUME);
+      double swap = PositionGetDouble(POSITION_SWAP);
+
+      // Profit orders(+) | Sum all profit
+      if (profit > 0)
       {
-        double profit = OrderProfit() + OrderSwap();
+        profitTotal = profitTotal + profit;
+        AddKeyValue(arrProfit, posTicket, (int)posType, lots, profit, swap);
+      }
 
-        // Profit orders(+) | Sum all profit
-        if (profit > 0)
-        {
-          profitTotal = profitTotal + profit;
-          AddKeyValue(arrProfit, OrderTicket(), OrderType(), OrderLots(), profit, OrderSwap());
-        }
-
-        // Loss orders(-) | Put loss orders in array
-        if (profit < 0)
-        {
-          InsertMultiArray("DESC", OrderTicket(), OrderType(), OrderLots(), profit, OrderSwap());
-        }
+      // Loss orders(-) | Put loss orders in array
+      if (profit < 0)
+      {
+        InsertMultiArray("DESC", posTicket, (int)posType, lots, profit, swap);
       }
     }
   }
@@ -941,4 +1387,94 @@ void InsertMultiArray(string format, int ticket, int type, double lot, double pr
            "  Lot=", arrProfit[i].lotsize,
            "  Profit=", arrProfit[i].profit);
   }*/
+}
+
+//+------------------------------------------------------------------+
+//| Button Session                                                   |
+//+------------------------------------------------------------------+
+void CreateButton(Button &btn, string text, color textColor, color backColor)
+{
+  if (ObjectFind(0, btn.name) != -1)
+    ObjectDelete(0, btn.name);
+
+  ObjectCreate(0, btn.name, OBJ_BUTTON, 0, 0, 0);
+
+  int disX = btn.disX;
+  int disY = 0;
+  int spaceY = 10;
+
+  if(Button_Position == TOP_LEFT || Button_Position == TOP_RIGHT)
+  {
+    disY = btn.higth - spaceY;
+  } 
+  else if(Button_Position == BOTTOM_LEFT || Button_Position == BOTTOM_RIGHT)
+  {
+    disY = btn.higth + spaceY;
+  }
+
+  ObjectSetInteger(0, btn.name, OBJPROP_CORNER, Button_Position);
+  ObjectSetInteger(0, btn.name, OBJPROP_XDISTANCE, disX);
+  ObjectSetInteger(0, btn.name, OBJPROP_YDISTANCE, disY);
+  ObjectSetInteger(0, btn.name, OBJPROP_XSIZE, btn.width);
+  ObjectSetInteger(0, btn.name, OBJPROP_YSIZE, btn.higth);
+
+  ObjectSetInteger(0, btn.name, OBJPROP_COLOR, textColor);
+  ObjectSetString(0, btn.name, OBJPROP_TEXT, text);
+  ObjectSetInteger(0, btn.name, OBJPROP_FONTSIZE, 12);
+  ObjectSetString(0, btn.name, OBJPROP_FONT, "Arial");
+
+  // ปรับสีพื้นหลัง (รองรับ)
+  ObjectSetInteger(0, btn.name, OBJPROP_BGCOLOR, backColor);
+  // ทำให้ปุ่มดูโค้ง (แบบจำลอง ด้วย BORDER_FLAT)
+  ObjectSetInteger(0, btn.name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+}
+
+//+------------------------------------------------------------------+
+//| Process Sesesion                                                 |
+//+------------------------------------------------------------------+
+void SetButtonEnabled(string name, bool enabled)
+{
+  if (enabled)
+  {
+    // สีตอน enabled
+    ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
+    ObjectSetInteger(0, name, OBJPROP_BGCOLOR, clrBlue);
+    ObjectSetInteger(0, name, OBJPROP_HIDDEN, !enabled);
+    ObjectSetString(0, name, OBJPROP_TOOLTIP, "Click");
+  }
+  else
+  {
+    // สีตอน disable
+    ObjectSetInteger(0, name, OBJPROP_COLOR, clrGray);
+    ObjectSetInteger(0, name, OBJPROP_BGCOLOR, clrDarkGray);
+    ObjectSetInteger(0, name, OBJPROP_HIDDEN, !enabled);
+    ObjectSetString(0, name, OBJPROP_TOOLTIP, "Disabled");
+  }
+}
+
+//+------------------------------------------------------------------+
+//| Event Sesesion                                                   |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+  if (id == CHARTEVENT_OBJECT_CLICK)
+  {
+    if (sparam == BTN1)
+    {
+      FNC_Auto_Remove = !FNC_Auto_Remove;
+      RefreshButton(objButton[0], FNC_Auto_Remove);
+    }
+
+    if (sparam == BTN2)
+    {
+      if (TotalOrdersCount >= Remove_At)
+      {
+        CloseOrderConditions();
+      }
+      else
+      {
+        Alert("Current orders less than ", Remove_At);
+      }
+    }
+  }
 }
