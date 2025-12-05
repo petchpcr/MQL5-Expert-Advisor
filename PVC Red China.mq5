@@ -39,6 +39,9 @@ const input string _____Trading_____ = "============ Trading ============";
 input double Lot_Size = 0.01; // ขนาด Lot
 input double Target = 50.0; // Target
 
+const input string _____Statistic_____ = "============ Statistic ============";
+input datetime St_Date = D'2025.01.01 00:00'; // คำนวณสถิติตั้งแต่วันที่
+
 int slipp = 20;
 int MustRemove = 0;
 int removed = 0;
@@ -83,7 +86,7 @@ class CLabel
 public:
    string name;
    string text;
-   int    x, y;
+   int    group, x, y;
    color  clr;
    int    fontSize;
    string fontName;
@@ -99,12 +102,13 @@ public:
       fontName = "Arial";
    }
 
-   bool Create(string _name, string _text, int _x, int _y)
+   bool Create(string _name, string _text, int _group, int _x, int _y)
    {
-      name = _name;
-      text = _text;
-      x    = _x;
-      y    = _y;
+      name  = _name;
+      text  = _text;
+      group = _group;
+      x     = _x;
+      y     = _y;
 
       if(!ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0))
          return false;
@@ -158,6 +162,7 @@ public:
       y = _y;
       ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
    }
+   
    void Delete()
    {
       ObjectDelete(0, name);
@@ -174,13 +179,13 @@ private:
 
 public:
 
-   int Add(string name, string text, int x, int y)
+   int Add(string name, string text, int group, int x, int y)
    {
       int n = ArraySize(labels);
       ArrayResize(labels, n + 1);
 
       labels[n] = new CLabel;
-      labels[n].Create(name, text, x, y);
+      labels[n].Create(name, text, group, x, y);
 
       return n;
    }
@@ -219,7 +224,6 @@ public:
    }
 };
 
-
 struct KeyValue
 {
   int ticket;
@@ -245,31 +249,40 @@ KeyValue arrLoss[];
 KeyValue arrProfit[];
 KeyValue arrDelete[];
 
-double BuyProfitTotal = 0.0;  // sum of buy profit (money: profit+swap+commission)
-double SellProfitTotal = 0.0; // sum of sell profit (money: profit+swap+commission)
-double NetProfitTotal = 0.0;  // BuyProfitTotal + SellProfitTotal (money)
-
 int TotalOrdersCount = 0;
 int BuyOrdersCount = 0;
 int SellOrdersCount = 0;
+
+double TotalLot = 0;
+double BuyLot = 0;
+double SellLot = 0;
+
+double BuyProfitTotal = 0.0;  // sum of buy profit (money: profit+swap+commission)
+double SellProfitTotal = 0.0; // sum of sell profit (money: profit+swap+commission)
+double NetProfitTotal = 0.0;  // BuyProfitTotal + SellProfitTotal (money)
 
 double highest_loss = 0;
 double highest_profit = 0;
 
 // *** แกะ MVP การรวบแบบที่ 2 (คาดว่ารวบโดยใช้เส้น avg)
 // *** rebate per d/w/m
+// *** Max DD + Current DD
 // *** ตัวแปรเอาไว้บันทึกค่าหลังปิดโปรแกรม
 
 //+------------------------------------------------------------------+
 void ResetProfitParams()
 {
-  BuyProfitTotal = 0.0;
-  SellProfitTotal = 0.0;
-  NetProfitTotal = 0.0;
-
   TotalOrdersCount = 0;
   BuyOrdersCount = 0;
   SellOrdersCount = 0;
+
+  TotalLot = 0;
+  BuyLot = 0;
+  SellLot = 0;
+
+  BuyProfitTotal = 0.0;
+  SellProfitTotal = 0.0;
+  NetProfitTotal = 0.0;
 
   highest_loss = 0;
   highest_profit = 0;
@@ -446,6 +459,7 @@ void UpdateTotalsInPoints()
 
     ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
     double posProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+    double volume = PositionGetDouble(POSITION_VOLUME);
 
     // loss (-)
     if (posProfit < 0)
@@ -462,15 +476,18 @@ void UpdateTotalsInPoints()
 
     if (type == POSITION_TYPE_BUY)
     {
+      BuyLot += volume;
       BuyProfitTotal += posProfit;
       BuyOrdersCount++;
     }
     else if (type == POSITION_TYPE_SELL)
     {
+      SellLot += volume;
       SellProfitTotal += posProfit;
       SellOrdersCount++;
     }
 
+    TotalLot += volume;
     TotalOrdersCount++;
   }
 
@@ -543,7 +560,19 @@ string NumberFormat(string val)
 //| Expert initialization function                                   |
 //+------------------------------------------------------------------+
 CLabelManager LM;
-int lb_band,lb_fb,lb_t_acc,lb_ab,lb_ap,lb_t_res,lb_np,lb_dd,lb_t_cas,lb_od,lb_pf;
+int lb_band,lb_fb,lb_t_acc,lb_t_res,lb_t_cas,lb_t_ln;
+int lb_ab1,lb_ab2;
+int lb_od1,lb_od2,lb_od3,lb_od4,lb_od5,lb_od6;
+int lb_lt1,lb_lt2,lb_lt3,lb_lt4,lb_lt5,lb_lt6;
+int lb_pf1,lb_pf2,lb_pf3,lb_pf4,lb_pf5,lb_pf6;
+int lb_dd1,lb_dd2,lb_dd3;
+int lb_td1,lb_td2,lb_td3,lb_td4,lb_td5,lb_td6;
+int lb_lw1,lb_lw2,lb_lw3,lb_lw4,lb_lw5,lb_lw6;
+int lb_lm1,lb_lm2,lb_lm3,lb_lm4,lb_lm5,lb_lm6;
+int lb_ly1,lb_ly2,lb_ly3,lb_ly4,lb_ly5,lb_ly6;
+int lb_sa1,lb_sa2,lb_sa3,lb_sa4,lb_sa5,lb_sa6;
+
+long dtToday, dt7DaysAgo, dt30DaysAgo, dt365DaysAgo;
 
 int OnInit()
 {
@@ -551,6 +580,7 @@ int OnInit()
   FNC_Auto_Remove = Auto_Remove;
 
   CreateLabel();
+  CalculateReport();
   SortObject();
   RefreshButton(objButton[0], FNC_Auto_Remove);
   RefreshButton(objButton[1], false);
@@ -563,31 +593,149 @@ void CreateLabel()
   
   if(Label_Position == TOP_LEFT || Label_Position == TOP_RIGHT)
   {
-    lb_band     = LM.Add("lb_band", "Local FX - "+ea_name, 10, 20);
-    lb_fb       = LM.Add("lb_fb", "www.facebook.com/LocalFX4U", 10, 43);
-    lb_t_acc    = LM.Add("lb_t_acc", "=========== Account ===========", 10, 65);
-    lb_ab       = LM.Add("lb_ab", "-", 10, 80);
-    lb_ap       = LM.Add("lb_ap", "-", 10, 95);
-    lb_t_res    = LM.Add("lb_t_res", "============ Result ============", 10, 110);
-    lb_np       = LM.Add("lb_np", "-", 10, 125);
-    lb_dd       = LM.Add("lb_dd", "-", 10, 140);
-    lb_t_cas    = LM.Add("lb_t_cas", "============ Casual ============", 10, 155);
-    lb_od       = LM.Add("lb_od", "-", 10, 170);
-    lb_pf       = LM.Add("lb_pf", "-", 10, 185);
+    lb_band     = LM.Add("lb_band", "Local FX - "+ea_name, 0, 10, 20);
+    lb_fb       = LM.Add("lb_fb", "www.facebook.com/LocalFX4U", 0, 10, 43);
+
+    lb_t_acc    = LM.Add("lb_t_acc", "============== Account ==============", 0, 10, 65);
+    lb_ab1      = LM.Add("lb_ab1", "Account balance:", 1, 10, 80);
+    lb_ab2      = LM.Add("lb_ab2", "-", 1, 130, 80);
+
+    lb_t_cas    = LM.Add("lb_t_cas", "=============== Trade ===============", 0, 10, 100);
+    lb_od1      = LM.Add("lb_od1", "Total Order:", 2, 10, 115);
+    lb_od2      = LM.Add("lb_od2", "-", 2, 80, 115);
+    lb_od3      = LM.Add("lb_od3", "Buy:", 2, 130, 115);
+    lb_od4      = LM.Add("lb_od4", "-", 2, 160, 115);
+    lb_od5      = LM.Add("lb_od5", "Sell:", 2, 200, 115);
+    lb_od6      = LM.Add("lb_od6", "-", 2, 230, 115);
+
+    lb_lt1      = LM.Add("lb_lt1", "Total Lot:", 3, 10, 130);
+    lb_lt2      = LM.Add("lb_lt2", "-", 3, 80, 130);
+    lb_lt3      = LM.Add("lb_lt3", "Buy:", 3, 130, 130);
+    lb_lt4      = LM.Add("lb_lt4", "-", 3, 160, 130);
+    lb_lt5      = LM.Add("lb_lt5", "Sell:", 3, 200, 130);
+    lb_lt6      = LM.Add("lb_lt6", "-", 3, 230, 130);
+
+    lb_pf1      = LM.Add("lb_pf1", "Net Profit:", 3, 10, 145);
+    lb_pf2      = LM.Add("lb_pf2", "-", 3, 80, 145);
+    lb_pf3      = LM.Add("lb_pf3", "Buy:", 3, 130, 145);
+    lb_pf4      = LM.Add("lb_pf4", "-", 3, 160, 145);
+    lb_pf5      = LM.Add("lb_pf5", "Sell:", 3, 200, 145);
+    lb_pf6      = LM.Add("lb_pf6", "-", 3, 230, 145);
+
+    lb_t_res    = LM.Add("lb_t_res", "=============== Result ==============", 0, 10, 165);
+    lb_dd1      = LM.Add("lb_dd1", "Max DD:", 4, 10, 185);
+    lb_dd2      = LM.Add("lb_dd2", "-", 4, 80, 185);
+    lb_dd3      = LM.Add("lb_dd3", "-", 4, 190, 185);
+
+    lb_td1      = LM.Add("lb_td1", "Today:", 6, 10, 210);
+    lb_td2      = LM.Add("lb_td2", "0.00", 6, 55, 210);
+    lb_td3      = LM.Add("lb_td3", "Lot:", 6, 130, 210);
+    lb_td4      = LM.Add("lb_td4", "0.00", 6, 155, 210);
+    lb_td5      = LM.Add("lb_td5", "Rebate:", 6, 200, 210);
+    lb_td6      = LM.Add("lb_td6", "0.00", 6, 250, 210);
+
+    lb_lw1      = LM.Add("lb_lw1", "Week:", 7, 10, 225);
+    lb_lw2      = LM.Add("lb_lw2", "0.00", 7, 55, 225);
+    lb_lw3      = LM.Add("lb_lw3", "Lot:", 7, 130, 225);
+    lb_lw4      = LM.Add("lb_lw4", "0.00", 7, 155, 225);
+    lb_lw5      = LM.Add("lb_lw5", "Rebate:", 7, 200, 225);
+    lb_lw6      = LM.Add("lb_lw6", "0.00", 7, 250, 225);
+
+    lb_lm1      = LM.Add("lb_lm1", "Month:", 8, 10, 240);
+    lb_lm2      = LM.Add("lb_lm2", "0.00", 8, 55, 240);
+    lb_lm3      = LM.Add("lb_lm3", "Lot:", 8, 130, 240);
+    lb_lm4      = LM.Add("lb_lm4", "0.00", 8, 155, 240);
+    lb_lm5      = LM.Add("lb_lm5", "Rebate:", 8, 200, 240);
+    lb_lm6      = LM.Add("lb_lm6", "0.00", 8, 250, 240);
+
+    lb_ly1      = LM.Add("lb_ly1", "Year:", 9, 10, 255);
+    lb_ly2      = LM.Add("lb_ly2", "0.00", 9, 55, 255);
+    lb_ly3      = LM.Add("lb_ly3", "Lot:", 9, 130, 255);
+    lb_ly4      = LM.Add("lb_ly4", "0.00", 9, 155, 255);
+    lb_ly5      = LM.Add("lb_ly5", "Rebate:", 9, 200, 255);
+    lb_ly6      = LM.Add("lb_ly6", "0.00", 9, 250, 255);
+
+    lb_t_ln     = LM.Add("lb_t_ln", "---------------------------------------------------------------", 0, 10, 270);
+
+    lb_sa1      = LM.Add("lb_sa1", "Total:", 10, 10, 285);
+    lb_sa2      = LM.Add("lb_sa2", "0.00", 10, 55, 285);
+    lb_sa3      = LM.Add("lb_sa3", "Lot:", 10, 130, 285);
+    lb_sa4      = LM.Add("lb_sa4", "0.00", 10, 155, 285);
+    lb_sa5      = LM.Add("lb_sa5", "Rebate:", 10, 200, 285);
+    lb_sa6      = LM.Add("lb_sa6", "0.00", 10, 250, 285);
   } 
   else if (Label_Position == BOTTOM_LEFT || Label_Position == BOTTOM_RIGHT)
   {
-    lb_band     = LM.Add("lb_band", "Local FX - "+ea_name, 10, 195);
-    lb_fb       = LM.Add("lb_fb", "www.facebook.com/LocalFX4U", 10, 173);
-    lb_t_acc    = LM.Add("lb_t_acc", "=========== Account ===========", 10, 155);
-    lb_ab       = LM.Add("lb_ab", "-", 10, 140);
-    lb_ap       = LM.Add("lb_ap", "-", 10, 125);
-    lb_t_res    = LM.Add("lb_t_res", "============ Result ============", 10, 110);
-    lb_np       = LM.Add("lb_np", "-", 10, 95);
-    lb_dd       = LM.Add("lb_dd", "-", 10, 80);
-    lb_t_cas    = LM.Add("lb_t_cas", "============ Casual ============", 10, 65);
-    lb_od       = LM.Add("lb_od", "-", 10, 50);
-    lb_pf       = LM.Add("lb_pf", "-", 10, 35);
+    lb_band     = LM.Add("lb_band", "Local FX - "+ea_name, 0, 10, 285);
+    lb_fb       = LM.Add("lb_fb", "www.facebook.com/LocalFX4U", 0, 10, 262);
+
+    lb_t_acc    = LM.Add("lb_t_acc", "============== Account ==============", 0, 10, 240);
+    lb_ab1      = LM.Add("lb_ab1", "Account balance:", 1, 10, 225);
+    lb_ab2      = LM.Add("lb_ab2", "-", 1, 130, 225);
+
+    lb_t_cas    = LM.Add("lb_t_cas", "=============== Trade ===============", 0, 10, 205);
+    lb_od1      = LM.Add("lb_od1", "Total Order:", 2, 10, 190);
+    lb_od2      = LM.Add("lb_od2", "-", 2, 80, 190);
+    lb_od3      = LM.Add("lb_od3", "Buy:", 2, 130, 190);
+    lb_od4      = LM.Add("lb_od4", "-", 2, 160, 190);
+    lb_od5      = LM.Add("lb_od5", "Sell:", 2, 200, 190);
+    lb_od6      = LM.Add("lb_od6", "-", 2, 230, 190);
+
+    lb_lt1      = LM.Add("lb_lt1", "Total Lot:", 3, 10, 175);
+    lb_lt2      = LM.Add("lb_lt2", "-", 3, 80, 175);
+    lb_lt3      = LM.Add("lb_lt3", "Buy:", 3, 130, 175);
+    lb_lt4      = LM.Add("lb_lt4", "-", 3, 160, 175);
+    lb_lt5      = LM.Add("lb_lt5", "Sell:", 3, 200, 175);
+    lb_lt6      = LM.Add("lb_lt6", "-", 3, 230, 175);
+
+    lb_pf1      = LM.Add("lb_pf1", "Net Profit:", 3, 10, 160);
+    lb_pf2      = LM.Add("lb_pf2", "-", 3, 80, 160);
+    lb_pf3      = LM.Add("lb_pf3", "Buy:", 3, 130, 160);
+    lb_pf4      = LM.Add("lb_pf4", "-", 3, 160, 160);
+    lb_pf5      = LM.Add("lb_pf5", "Sell:", 3, 200, 160);
+    lb_pf6      = LM.Add("lb_pf6", "-", 3, 230, 160);
+
+    lb_t_res    = LM.Add("lb_t_res", "=============== Result ==============", 0, 10, 140);
+    lb_dd1      = LM.Add("lb_dd1", "Max DD:", 4, 10, 120);
+    lb_dd2      = LM.Add("lb_dd2", "-", 4, 80, 120);
+    lb_dd3      = LM.Add("lb_dd3", "-", 4, 190, 120);
+
+    lb_td1      = LM.Add("lb_td1", "Today:", 6, 10, 95);
+    lb_td2      = LM.Add("lb_td2", "0.00", 6, 55, 95);
+    lb_td3      = LM.Add("lb_td3", "Lot:", 6, 130, 95);
+    lb_td4      = LM.Add("lb_td4", "0.00", 6, 155, 95);
+    lb_td5      = LM.Add("lb_td5", "Rebate:", 6, 200, 95);
+    lb_td6      = LM.Add("lb_td6", "0.00", 6, 250, 95);
+
+    lb_lw1      = LM.Add("lb_lw1", "Week:", 7, 10, 80);
+    lb_lw2      = LM.Add("lb_lw2", "0.00", 7, 55, 80);
+    lb_lw3      = LM.Add("lb_lw3", "Lot:", 7, 130, 80);
+    lb_lw4      = LM.Add("lb_lw4", "0.00", 7, 155, 80);
+    lb_lw5      = LM.Add("lb_lw5", "Rebate:", 7, 200, 80);
+    lb_lw6      = LM.Add("lb_lw6", "0.00", 7, 250, 80);
+
+    lb_lm1      = LM.Add("lb_lm1", "Month:", 8, 10, 65);
+    lb_lm2      = LM.Add("lb_lm2", "0.00", 8, 55, 65);
+    lb_lm3      = LM.Add("lb_lm3", "Lot:", 8, 130, 65);
+    lb_lm4      = LM.Add("lb_lm4", "0.00", 8, 155, 65);
+    lb_lm5      = LM.Add("lb_lm5", "Rebate:", 8, 200, 65);
+    lb_lm6      = LM.Add("lb_lm6", "0.00", 8, 250, 65);
+
+    lb_ly1      = LM.Add("lb_ly1", "Year:", 9, 10, 50);
+    lb_ly2      = LM.Add("lb_ly2", "0.00", 9, 55, 50);
+    lb_ly3      = LM.Add("lb_ly3", "Lot:", 9, 130, 50);
+    lb_ly4      = LM.Add("lb_ly4", "0.00", 9, 155, 50);
+    lb_ly5      = LM.Add("lb_ly5", "Rebate:", 9, 200, 50);
+    lb_ly6      = LM.Add("lb_ly6", "0.00", 9, 250, 50);
+
+    lb_t_ln     = LM.Add("lb_t_ln", "---------------------------------------------------------------", 0, 10, 35);
+
+    lb_sa1      = LM.Add("lb_sa1", "Total:", 10, 10, 20);
+    lb_sa2      = LM.Add("lb_sa2", "0.00", 10, 55, 20);
+    lb_sa3      = LM.Add("lb_sa3", "Lot:", 10, 130, 20);
+    lb_sa4      = LM.Add("lb_sa4", "0.00", 10, 155, 20);
+    lb_sa5      = LM.Add("lb_sa5", "Rebate:", 10, 200, 20);
+    lb_sa6      = LM.Add("lb_sa6", "0.00", 10, 250, 20);
   }
   
 
@@ -597,6 +745,7 @@ void CreateLabel()
   LM.Get(lb_t_acc).SetColor(clrLightSlateGray);
   LM.Get(lb_t_res).SetColor(clrLightSlateGray);
   LM.Get(lb_t_cas).SetColor(clrLightSlateGray);
+  LM.Get(lb_t_ln).SetColor(clrLightSlateGray);
 }
 
 void SortObject()
@@ -610,12 +759,34 @@ void SortObject()
     }
   } 
 
-  int lbX = 0;
   if(Label_Position == TOP_RIGHT || Label_Position == BOTTOM_RIGHT)
   {
+    int cur_group = 0;
+    int oldX = 0;
+
     for (int i = 0; i < LM.Count(); i++)
     {
-      LM.Get(i).MoveX(LM.Get(i).x + 240);
+      if(LM.Get(i).group == 0)
+      {
+        LM.Get(i).MoveX(LM.Get(i).x + 280);
+        
+      } else {
+        if(cur_group != LM.Get(i).group)
+        {
+          cur_group = LM.Get(i).group;
+          oldX = LM.Get(i).x;
+          LM.Get(i).MoveX(LM.Get(i).x + 280);
+        } else {
+          int prev = LM.Get(i-1).x;
+          int cur = LM.Get(i).x;
+
+          int diff = cur - oldX;
+          int newX = prev - diff;
+          LM.Get(i).MoveX(newX);
+          oldX = cur;
+        }
+      }
+      
       if(Label_Position == BOTTOM_RIGHT && Label_Position != Button_Position)
       {
         LM.Get(i).MoveY(LM.Get(i).y + 20);
@@ -687,16 +858,112 @@ void OnDeinit(const int reason)
 
 void UpdateLabels()
 {
-  LM.Get(lb_ab).SetText("Account balance: "+NumberFormat((string)AccountInfoDouble(ACCOUNT_BALANCE)));
-  LM.Get(lb_ap).SetText("Account profit: "+NumberFormat((string)acc_profit));
-  LM.Get(lb_np).SetText("Net profit: "+NumberFormat((string)net_profit)+" | "+NumberFormat((string)net_profit_per)+"%");
-  LM.Get(lb_dd).SetText("Max DD: "+NumberFormat((string)maxDrawDown)+"  | "+NumberFormat((string)maxDD_Per)+"%");
-  LM.Get(lb_od).SetText("Order Total: "+(string)TotalOrdersCount+" Buy: "+(string)BuyOrdersCount+" Sell: "+(string)SellOrdersCount);
-  LM.Get(lb_pf).SetText("Net Profit: "+DoubleToString(NetProfitTotal, 1)+" Buy: "+DoubleToString(BuyProfitTotal, 1)+" Sell: "+DoubleToString(SellProfitTotal, 1));
+  LM.Get(lb_ab2).SetText(NumberFormat((string)AccountInfoDouble(ACCOUNT_BALANCE)));
+
+  LM.Get(lb_od2).SetText((string)TotalOrdersCount);
+  LM.Get(lb_od4).SetText((string)BuyOrdersCount);
+  LM.Get(lb_od6).SetText((string)SellOrdersCount);
+
+  LM.Get(lb_lt2).SetText(DoubleToString(TotalLot, 2));
+  LM.Get(lb_lt4).SetText(DoubleToString(BuyLot, 2));
+  LM.Get(lb_lt6).SetText(DoubleToString(SellLot, 2));
+
+  LM.Get(lb_pf2).SetText(DoubleToString(NetProfitTotal, 1));
+  LM.Get(lb_pf4).SetText(DoubleToString(BuyProfitTotal, 1));
+  LM.Get(lb_pf6).SetText(DoubleToString(SellProfitTotal, 1));
+
+  LM.Get(lb_dd2).SetText(NumberFormat((string)maxDrawDown));
+  LM.Get(lb_dd3).SetText("("+NumberFormat((string)maxDD_Per)+"%)");
+}
+
+void CalculateReport()
+{
+  datetime from_time = St_Date;
+  datetime to_time   = TimeCurrent();
+
+  if(HistorySelect(from_time, to_time))
+  {
+    int total_deals   = HistoryDealsTotal();
+
+    double _day = 0;
+    double _week = 0;
+    double _month = 0;
+    double _year = 0;
+    double _total = 0;
+
+    double _day_lot = 0;
+    double _week_lot = 0;
+    double _month_lot = 0;
+    double _year_lot = 0;
+    double _total_lot = 0;
+
+    for(int i = 0; i < total_deals; i++)
+    {
+      ulong deal_ticket = HistoryDealGetTicket(i);
+      string symbol     = HistoryDealGetString(deal_ticket, DEAL_SYMBOL);
+
+      if(symbol != _Symbol)
+      {  
+          continue;
+      }
+
+      long deal_entry   = HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
+      long deal_type    = HistoryDealGetInteger(deal_ticket, DEAL_TYPE);
+      long magic        = HistoryDealGetInteger(deal_ticket, DEAL_MAGIC);
+      double lot        = HistoryDealGetDouble(deal_ticket, DEAL_VOLUME);
+      double swap       = HistoryDealGetDouble(deal_ticket, DEAL_SWAP);
+      double comm       = HistoryDealGetDouble(deal_ticket, DEAL_COMMISSION);
+      double profit     = HistoryDealGetDouble(deal_ticket, DEAL_PROFIT) + swap + comm;
+      long close_time   = HistoryDealGetInteger(deal_ticket, DEAL_TIME_MSC);
+      
+      if(deal_entry == DEAL_ENTRY_OUT)// only closed order
+      {
+        if(close_time > dtToday)
+        {
+          _day += profit;
+          _day_lot += lot;
+        }
+        if(close_time > dt7DaysAgo)
+        {
+          _week += profit;
+          _week_lot += lot;
+        }
+        if(close_time > dt30DaysAgo)
+        {
+          _month += profit;
+          _month_lot += lot;
+        }
+        if(close_time > dt365DaysAgo)
+        {
+          _year += profit;
+          _year_lot += lot;
+        }
+        _total += profit;
+        _total_lot += lot;
+      }
+    }
+
+    LM.Get(lb_td2).SetText(NumberFormat((string)_day));
+    LM.Get(lb_td4).SetText(NumberFormat((string)_day_lot));
+    LM.Get(lb_lw2).SetText(NumberFormat((string)_week));
+    LM.Get(lb_lw4).SetText(NumberFormat((string)_week_lot));
+    LM.Get(lb_lm2).SetText(NumberFormat((string)_month));
+    LM.Get(lb_lm4).SetText(NumberFormat((string)_month_lot));
+    LM.Get(lb_ly2).SetText(NumberFormat((string)_year));
+    LM.Get(lb_ly4).SetText(NumberFormat((string)_year_lot));
+    LM.Get(lb_sa2).SetText(NumberFormat((string)_total));
+    LM.Get(lb_sa4).SetText(NumberFormat((string)_total_lot));
+  }
 }
 
 void OnTick()
 {
+  datetime curDate  = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
+  dtToday           = curDate;
+  dt7DaysAgo        = curDate - 6*24*60*60;
+  dt30DaysAgo       = curDate - 29*24*60*60;
+  dt365DaysAgo      = curDate - 364*24*60*60;
+
   acc_balance = AccountInfoDouble(ACCOUNT_BALANCE);
   acc_profit = AccountInfoDouble(ACCOUNT_PROFIT);
 
@@ -710,8 +977,10 @@ void OnTick()
   net_profit_per = (net_profit / first_balance) * 100;
 
   ResetProfitParams();
+  CalculateReport();
   UpdateTotalsInPoints();
   UpdateLabels();
+  // return;
 
   if(CloseSideIfTargetReached())
   {
