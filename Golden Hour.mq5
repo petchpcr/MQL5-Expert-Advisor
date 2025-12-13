@@ -465,6 +465,7 @@ void OnTick()
   ResetProfitParams();
   CalculateReport();
   UpdateTotalsInPoints();
+  NotifyEmail();
   UpdateLabels();
   UpdateAverageLine();
   ShowComment();
