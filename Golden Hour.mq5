@@ -12,7 +12,7 @@
 #define BTN2 "BTN_CLEAR_NOW"
 
 string Comp_Name = "Local FX";
-string EA_Name = "Golden Hour";
+string EA_Name = "Golden_Hour";
 int slipp = 20;
 
 enum AccCurrency
@@ -25,6 +25,20 @@ enum Switcher
 {
    ON = 1,
    OFF = 0
+};
+
+enum Notify
+{
+   NTF_0M   = 0,     // OFF
+   NTF_1M   = 60,    // 1 Minutes
+   NTF_10M  = 600,   // 10 Minutes
+   NTF_15M  = 900,   // 15 Minutes
+   NTF_30M  = 1800,  // 30 Minutes
+   NTF_1H   = 3600,  // 1 Hour
+   NTF_2H   = 7200,  // 2 Hours
+   NTF_4H   = 14400, // 4 Hours
+   NTF_8H   = 28800, // 8 Hours
+   NTF_12H  = 43200  // 12 Hours
 };
 
 enum Position
@@ -87,20 +101,26 @@ input double Limit_lot_size      = 10.00;  // กำหนด Lot size สูง
 double       Avg_dist_should_be  = 0;
 int          Avg_start_mtgl      = 0;
 
+const input string _____Notification_____ = "=========== Notification ==========";
+input Notify Notify_Timer     = NTF_0M; // แจ้งเตือนทุกๆ นาที,ชั่วโมง
+input int Notify_DD           = 0;  // แจ้งเตือนเมื่อ Draw Down ถึง ... %
+double Notify_DD_per          = 0;
+input int Notify_Orders       = 0;  // แจ้งเตือนเมื่อจำนวน Order ถึง ...
+
 const input string _____UI_Position_____ = "============ UI Setting ============";
 input Position Button_Position = TOP_RIGHT; // ตำแหน่งของปุ่ม
 input Position Label_Position = TOP_LEFT; // ตำแหน่งของรายละเอียด
-input datetime St_Date = D'2025.01.01 00:00'; // คำนวณสถิติตั้งแต่วันที่
+input datetime St_Date = D'2026.01.01 00:00'; // คำนวณสถิติตั้งแต่วันที่
 
 // ----- [Casual]
+long   acc_id        = AccountInfoInteger(ACCOUNT_LOGIN);
 string ac_currency   = AccountInfoString(ACCOUNT_CURRENCY);
 double first_balance = AccountInfoDouble(ACCOUNT_BALANCE);
 double acc_balance = AccountInfoDouble(ACCOUNT_BALANCE);
 double acc_profit = AccountInfoDouble(ACCOUNT_PROFIT);
-double net_profit = 0;
-double net_profit_per = 0;
 double maxDrawDown = 0;
 double maxDD_Per = 0;
+double curDD_Per     = 0;
 
 string   _symbol           = _Symbol;
 double   _ask              = 0;
@@ -371,6 +391,23 @@ double money_after_closed = 0; // V2
 double netTotal = 0;           // V3
 // ----- [Auto Close]
 
+// ----- [Email]
+datetime lastNotify = 0;
+// ----- [Email]
+
+void LoadVariable()
+{
+   if (GlobalVariableCheck(EA_Name+"gblLastNotificate"+_symbol))
+   {
+      lastNotify = (datetime)GlobalVariableGet(EA_Name+"gblLastNotificate"+_symbol);
+   }
+}
+
+void SaveLastNotificate(double data)
+{
+  GlobalVariableSet(EA_Name+"gblLastNotificate"+_symbol, data);
+}
+
 //+----------------------------------------+
 //| Initialize                             |
 //+----------------------------------------+
@@ -378,6 +415,7 @@ int OnInit()
 {
   MustRemove = (int)MathCeil((Remove_At * Remove_Percent) / 100);
   FNC_Auto_Remove = Auto_Remove;
+  Notify_DD_per = (Notify_DD / 100) * -1;
   _rebate = Acc_Rebate / Acc_Currency;
   point_avg = _Point * PipAdjust;
 
@@ -419,9 +457,7 @@ void OnTick()
     maxDrawDown = acc_profit;
     maxDD_Per = (maxDrawDown / acc_balance) * 100;
   }
-
-  net_profit = acc_balance - first_balance;
-  net_profit_per = (net_profit / first_balance) * 100;
+  curDD_Per = (acc_profit / acc_balance) * 100;
 
   _ask     = SymbolInfoDouble(_symbol,SYMBOL_ASK);
   _bid     = SymbolInfoDouble(_symbol,SYMBOL_BID);
@@ -1303,6 +1339,49 @@ void ResetProfitParams()
   range_price          = 0;
   middle_price         = 0;
   Stack_biglot         = 0;
+}
+
+void NotifyEmail()
+{
+   if(Notify_Timer > 0)
+   {
+      datetime curDate = TimeCurrent();
+      bool send1 = false;
+      bool send2 = false;
+
+      // Notify -> Draw Down
+      if(curDD_Per <= Notify_DD_per && Notify_DD > 0)
+      {
+         int noti_diff = (int)(curDate - lastNotify);
+         if (noti_diff >= (int)Notify_Timer)
+         {
+            string topic = (string)acc_id + "[" + _symbol + "] Draw Down: " + (string)NormalizeDouble(curDD_Per,2) + "% | " + EA_Name;
+            string txtTimer = Notify_Timer < 3600 ? (string)((int)Notify_Timer / 60) + " นาที" : (string)((int)Notify_Timer / 3600) + " ชั่วโมง";
+            string detail = "แจ้งเตือนอัตโนมัติทุกๆ "+ txtTimer +" จาก EA " + EA_Name + " เมื่อมี Draw Down ต่ำกว่า " + (string)Notify_DD + "%";
+            SendMail(topic, detail);
+            send1 = true;
+         }
+      }
+      // Notify -> Orders
+      if (totalOrders >= Notify_Orders && Notify_Orders > 0)
+      {
+         int noti_diff = (int)(curDate - lastNotify);
+         if (noti_diff >= (int)Notify_Timer)
+         {
+            string topic = (string)acc_id + "[" + _symbol + "] Opening orders: " + (string)totalOrders + " | " + EA_Name;
+            string txtTimer = Notify_Timer < 3600 ? (string)((int)Notify_Timer / 60) + " นาที" : (string)((int)Notify_Timer / 3600) + " ชั่วโมง";
+            string detail = "แจ้งเตือนอัตโนมัติทุกๆ "+ txtTimer +" จาก EA " + EA_Name + " เมื่อเปิด order จำนวน " + (string)Notify_Orders + " หรือมากกว่า";
+            SendMail(topic, detail);
+            send2 = true;
+         }
+      }
+
+      if(send1 || send2)
+      {
+         lastNotify = curDate;
+         SaveLastNotificate((double)lastNotify);
+      }
+   }
 }
 
 double CalculateBigLot(string type)
