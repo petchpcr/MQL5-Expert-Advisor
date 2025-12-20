@@ -19,8 +19,8 @@ int Slippage = 10;
 string gsheetDownloadUpload(string url,string datasheets, string keys, string columes, string updateValue, string updateColumes);
 #import
 
-string gsheet_url    = "https://script.google.com/macros/s/AKfycbxI0X4jY8dLMS4rH1JZsA0CmgwZ_ZekP7rIwnkxeZb6XvPtEAkVz-S4Qdy6M9J0b1A6BQ/exec";
-string datasheets    = "MT5"; //Datasheet
+string gsheet_url    = "https://script.google.com/macros/s/AKfycbxAnCOP-RpUzq16DcPt9WsDytjjxbldHEG5XVMfelp8wacSRwhlqJxKM2V3jkVcijtx/exec";
+string datasheets    = "MT5"; // Datasheet
 
 long   acc_id        = AccountInfoInteger(ACCOUNT_LOGIN);
 long   accountType   = AccountInfoInteger(ACCOUNT_TRADE_MODE);
@@ -104,9 +104,9 @@ double _rebate = 0;
 input AccCurrency Acc_Currency = CNT; // ประเภทบัญชี
 
 const input string _____Trading_____ = "============ Trading ============";
-input InpTimeframe Time_frame = TF_30M; // ออกออเดอร์ทุกๆ นาที/ชั่วโมง/...
+input InpTimeframe Time_frame = TF_20M; // ออกออเดอร์ทุกๆ นาที/ชั่วโมง/...
 input double Lot_Size = 0.01;           // ขนาด Lot
-input double Target = 10.0;             // Target
+input double Target = 5.0;             // Target
 
 const input string _____Auto_Remove_Order_____ = "======== Auto Remove Order ========";
 input Switcher Auto_Remove = false; // โหมดปิดออเดอร์อัตโนมัติ (เฉพาะออเดอร์ที่ปิดได้)
@@ -477,7 +477,7 @@ int OnInit()
    {
       if(!CheckApproveAccount())
       {
-         Alert("Account not approved to use this EA.\nPlease contact LocalFX for more information.");
+         Print("Account not approved to use this EA.\nPlease contact LocalFX for more information.");
          return(INIT_FAILED);
       }   
    }
@@ -835,7 +835,7 @@ void CreateLabel()
    LM.Get(lb_band).SetSize(15);
    LM.Get(lb_band).SetColor(clrDeepSkyBlue);
    LM.Get(lb_fb).SetColor(clrGoldenrod);
-   LM.Get(lb_cd4).SetColor(clrMediumSeaGreen);
+   LM.Get(lb_cd4).SetColor(clrRed);
    LM.Get(lb_t_acc).SetColor(clrLightSlateGray);
    LM.Get(lb_t_res).SetColor(clrLightSlateGray);
    LM.Get(lb_t_cas).SetColor(clrLightSlateGray);
@@ -1607,7 +1607,7 @@ bool CheckApproveAccount()
       backtest_mode = "Yes";
    }
 
-   updateValue   = realOrDemo + "," + backtest_mode + "," + server + "," + fullname + "," + broker; //Collect Data in 1 Line
+   updateValue   = realOrDemo + "," + server + "," + fullname + "," + broker; // Collect Data in 1 Line
    approve_account = gsheetDownloadUpload(gsheet_url, datasheets, keys, columes, updateValue, updateColumes);
 
    if(approve_account != "true")
