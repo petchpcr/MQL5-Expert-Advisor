@@ -15,6 +15,29 @@ string Comp_Name = "Local FX";
 string EA_Name = "Golden Hour";
 int Slippage = 10;
 
+#import "LibMT5Approve.ex5"
+string gsheetDownloadUpload(string url,string datasheets, string keys, string columes, string updateValue, string updateColumes);
+#import
+
+string gsheet_url    = "https://script.google.com/macros/s/AKfycbxI0X4jY8dLMS4rH1JZsA0CmgwZ_ZekP7rIwnkxeZb6XvPtEAkVz-S4Qdy6M9J0b1A6BQ/exec";
+string datasheets    = "MT5"; //Datasheet
+
+long   acc_id        = AccountInfoInteger(ACCOUNT_LOGIN);
+long   accountType   = AccountInfoInteger(ACCOUNT_TRADE_MODE);
+string ac_currency   = AccountInfoString(ACCOUNT_CURRENCY);
+string fullname      = AccountInfoString(ACCOUNT_NAME);
+string broker        = AccountInfoString(ACCOUNT_COMPANY);
+string server        = AccountInfoString(ACCOUNT_SERVER);
+string date_time     = TimeToString(TimeLocal(), TIME_DATE|TIME_SECONDS);
+string realOrDemo    = accountType == ACCOUNT_TRADE_MODE_DEMO ? "DEMO" : accountType == ACCOUNT_TRADE_MODE_REAL ? "REAL" : "-";
+string backtest_mode = "";
+
+string keys          = IntegerToString(acc_id); //Key
+string columes       = "3"; //Get(check) Data at column : C [ID]
+string updateValue   = "";  //Collect Data in 1 Line
+string updateColumes = "4"; //Send to column : D [AC Type]
+string approve_account = "";
+
 enum AccCurrency
 {
    USD = 1,  // USD
@@ -116,8 +139,6 @@ input Position Label_Position = BOTTOM_RIGHT;  // ตำแหน่งของ
 input datetime St_Date = D'2026.01.01 00:00'; // คำนวณสถิติตั้งแต่วันที่
 
 // ----- [Casual]
-long acc_id = AccountInfoInteger(ACCOUNT_LOGIN);
-string ac_currency = AccountInfoString(ACCOUNT_CURRENCY);
 double first_balance = AccountInfoDouble(ACCOUNT_BALANCE);
 double acc_balance = AccountInfoDouble(ACCOUNT_BALANCE);
 double acc_profit = AccountInfoDouble(ACCOUNT_PROFIT);
@@ -297,7 +318,7 @@ int lb_ab1, lb_ab2;
 int lb_od1, lb_od2, lb_od3, lb_od4, lb_od5, lb_od6;
 int lb_lt1, lb_lt2, lb_lt3, lb_lt4, lb_lt5, lb_lt6;
 int lb_pf1, lb_pf2, lb_pf3, lb_pf4, lb_pf5, lb_pf6;
-int lb_cd1, lb_cd2, lb_cd3;
+int lb_cd1, lb_cd2, lb_cd3, lb_cd4;
 int lb_dd1, lb_dd2, lb_dd3, lb_dd4;
 int lb_td1, lb_td2, lb_td3, lb_td4, lb_td5, lb_td6;
 int lb_lw1, lb_lw2, lb_lw3, lb_lw4, lb_lw5, lb_lw6;
@@ -441,6 +462,12 @@ void SaveMaxDrawDown(double dd_money, double dd_per, datetime dd_date)
 //+----------------------------------------+
 int OnInit()
 {
+   if(!CheckApproveAccount())
+   {
+      Alert("Account not approved to use this EA.\nPlease contact LocalFX for more information.");
+      return(INIT_FAILED);
+   }
+
    LoadVariable();
 
    MustRemove = (int)MathCeil((Remove_At * Remove_Percent) / 100);
@@ -597,6 +624,38 @@ void SortObject()
       }
    }
 }
+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+   if (id == CHARTEVENT_OBJECT_CLICK)
+   {
+      if (sparam == BTN1)
+      {
+         FNC_Auto_Remove = !FNC_Auto_Remove;
+         RefreshButton(objButton[0], FNC_Auto_Remove);
+      }
+
+      if (sparam == BTN2)
+      {
+         if (totalOrders >= Remove_At)
+         {
+            AutomaticCloseOrders();
+         }
+         else
+         {
+            Alert("Current orders less than ", Remove_At);
+         }
+      }
+
+      if(sparam == "lb_cd4")
+      {
+         SaveMaxDrawDown(0, 0, 0);
+         maxDrawDown = 0;
+         maxDD_Per = 0;
+         maxDD_Date = 0;
+      }
+   }
+}
 // ----- [All objects]
 
 // ----- [Label]
@@ -637,6 +696,7 @@ void CreateLabel()
       lb_cd1 = LM.Add("lb_cd1", "Current DD:", 5, 10, 185);
       lb_cd2 = LM.Add("lb_cd2", "-", 5, 80, 185);
       lb_cd3 = LM.Add("lb_cd3", "-", 5, 200, 185);
+      lb_cd4 = LM.Add("lb_cd4", "Clear Max DD", 5, 285, 185);
 
       lb_dd1 = LM.Add("lb_dd1", "Max DD:", 6, 10, 200);
       lb_dd2 = LM.Add("lb_dd2", "-", 6, 80, 200);
@@ -715,6 +775,7 @@ void CreateLabel()
       lb_cd1 = LM.Add("lb_cd1", "Current DD:", 5, 10, 155);
       lb_cd2 = LM.Add("lb_cd2", "-", 5, 80, 155);
       lb_cd3 = LM.Add("lb_cd3", "-", 5, 200, 155);
+      lb_cd4 = LM.Add("lb_cd4", "Clear Max DD", 5, 285, 155);
 
       lb_dd1 = LM.Add("lb_dd1", "Max DD:", 6, 10, 140);
       lb_dd2 = LM.Add("lb_dd2", "-", 6, 80, 140);
@@ -787,9 +848,8 @@ void UpdateLabels()
    LM.Get(lb_cd2).SetText(NumberFormat((string)curDrawDown));
    LM.Get(lb_cd3).SetText("(" + NumberFormat((string)curDD_Per) + "%)");
 
-   double txtMaxDD = maxDD_Date < St_Date ? 0 : maxDrawDown;
-   string txtMaxDD_date = maxDD_Date < St_Date ? "-" : TimeToString(maxDD_Date);
-   LM.Get(lb_dd2).SetText(NumberFormat((string)txtMaxDD));
+   string txtMaxDD_date = maxDD_Date == 0 ? "-" : TimeToString(maxDD_Date);
+   LM.Get(lb_dd2).SetText(NumberFormat((string)maxDrawDown));
    LM.Get(lb_dd3).SetText("(" + NumberFormat((string)maxDD_Per) + "%)");
    LM.Get(lb_dd4).SetText(txtMaxDD_date);
 }
@@ -948,30 +1008,6 @@ void RefreshButton(Button &btn, bool key)
    }
 
    CreateButton(btn, btnText, clrText, clrBg);
-}
-
-void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
-{
-   if (id == CHARTEVENT_OBJECT_CLICK)
-   {
-      if (sparam == BTN1)
-      {
-         FNC_Auto_Remove = !FNC_Auto_Remove;
-         RefreshButton(objButton[0], FNC_Auto_Remove);
-      }
-
-      if (sparam == BTN2)
-      {
-         if (totalOrders >= Remove_At)
-         {
-            AutomaticCloseOrders();
-         }
-         else
-         {
-            Alert("Current orders less than ", Remove_At);
-         }
-      }
-   }
 }
 // ----- [Button]
 
@@ -1548,7 +1584,26 @@ string NumberFormat(string val)
 // ----- [Helpers]
 
 // ----- [Condition]
+bool CheckApproveAccount()
+{
+   bool is_backtesting = (MQLInfoInteger(MQL_TESTER) == 1);
+   bool is_optimizing  = (MQLInfoInteger(MQL_OPTIMIZATION) == 1);
 
+   if(is_backtesting || is_optimizing)
+   {
+      backtest_mode = "Yes";
+   }
+
+   updateValue   = realOrDemo + "," + backtest_mode + "," + server + "," + fullname + "," + broker; //Collect Data in 1 Line
+   approve_account = gsheetDownloadUpload(gsheet_url, datasheets, keys, columes, updateValue, updateColumes);
+
+   if(approve_account != "true")
+   {
+      return false;
+   }
+
+   return true;
+}
 // ----- [Condition]
 
 //+------------------------------------------------------------------+
