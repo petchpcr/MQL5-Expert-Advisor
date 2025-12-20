@@ -52,7 +52,6 @@ enum Switcher
 
 enum Notify
 {
-   NTF_1M = 60,    // 1 Minutes
    NTF_5M = 300,   // 5 Minutes
    NTF_10M = 600,  // 10 Minutes
    NTF_15M = 900,  // 15 Minutes
