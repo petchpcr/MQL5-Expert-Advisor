@@ -37,6 +37,7 @@ string columes       = "3"; //Get(check) Data at column : C [ID]
 string updateValue   = "";  //Collect Data in 1 Line
 string updateColumes = "4"; //Send to column : D [AC Type]
 string approve_account = "";
+bool   isApprove     = false;
 
 enum AccCurrency
 {
@@ -426,6 +427,10 @@ datetime lastNotify = 0;
 
 void LoadVariable()
 {
+   if (GlobalVariableCheck(EA_Name + "gblUserApprove" + (string)acc_id))
+   {
+      isApprove = (bool)GlobalVariableGet(EA_Name + "gblUserApprove" + (string)acc_id);
+   }
    if (GlobalVariableCheck(EA_Name + "gblLastNotificate" + _symbol))
    {
       lastNotify = (datetime)GlobalVariableGet(EA_Name + "gblLastNotificate" + _symbol);
@@ -442,6 +447,11 @@ void LoadVariable()
    {
       maxDD_Date = (datetime)GlobalVariableGet(EA_Name + "gblMaxDrawDownDate" + _symbol);
    }
+}
+
+void SaveUserApprove(double data)
+{
+   GlobalVariableSet(EA_Name + "gblUserApprove" + (string)acc_id, data);
 }
 
 void SaveLastNotificate(double data)
@@ -461,13 +471,16 @@ void SaveMaxDrawDown(double dd_money, double dd_per, datetime dd_date)
 //+----------------------------------------+
 int OnInit()
 {
-   if(!CheckApproveAccount())
-   {
-      Alert("Account not approved to use this EA.\nPlease contact LocalFX for more information.");
-      return(INIT_FAILED);
-   }
-
    LoadVariable();
+
+   if(!isApprove)
+   {
+      if(!CheckApproveAccount())
+      {
+         Alert("Account not approved to use this EA.\nPlease contact LocalFX for more information.");
+         return(INIT_FAILED);
+      }   
+   }
 
    MustRemove = (int)MathCeil((Remove_At * Remove_Percent) / 100);
    FNC_Auto_Remove = Auto_Remove;
@@ -528,7 +541,7 @@ void OnTick()
    NotifyFeatures();
    UpdateLabels();
    UpdateAverageLine();
-   ShowComment();
+   //ShowComment();
    // return;
 
    if (CloseSideIfTargetReached())
@@ -774,7 +787,7 @@ void CreateLabel()
       lb_cd1 = LM.Add("lb_cd1", "Current DD:", 5, 10, 155);
       lb_cd2 = LM.Add("lb_cd2", "-", 5, 80, 155);
       lb_cd3 = LM.Add("lb_cd3", "-", 5, 200, 155);
-      lb_cd4 = LM.Add("lb_cd4", "Clear Max DD", 5, 285, 155);
+      lb_cd4 = LM.Add("lb_cd4", "[Clear Max DD]", 5, 285, 155);
 
       lb_dd1 = LM.Add("lb_dd1", "Max DD:", 6, 10, 140);
       lb_dd2 = LM.Add("lb_dd2", "-", 6, 80, 140);
@@ -822,6 +835,7 @@ void CreateLabel()
    LM.Get(lb_band).SetSize(15);
    LM.Get(lb_band).SetColor(clrDeepSkyBlue);
    LM.Get(lb_fb).SetColor(clrGoldenrod);
+   LM.Get(lb_cd4).SetColor(clrMediumSeaGreen);
    LM.Get(lb_t_acc).SetColor(clrLightSlateGray);
    LM.Get(lb_t_res).SetColor(clrLightSlateGray);
    LM.Get(lb_t_cas).SetColor(clrLightSlateGray);
@@ -1599,6 +1613,9 @@ bool CheckApproveAccount()
    if(approve_account != "true")
    {
       return false;
+   } else {
+      SaveUserApprove(1);
+      isApprove = true;
    }
 
    return true;
