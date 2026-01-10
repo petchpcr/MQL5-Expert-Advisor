@@ -52,6 +52,12 @@ enum Switcher
    OFF = 0
 };
 
+enum RiskLevel
+{
+   Normal = 2,  // เสี่ยงปานกลาง
+   High = 3 // เสี่ยงสูง
+};
+
 enum Notify
 {
    NTF_5M = 300,   // 5 Minutes
@@ -109,14 +115,25 @@ input InpTimeframe Time_frame = TF_20M; // ออกออเดอร์ทุ�
 input double Lot_Size = 0.01;           // ขนาด Lot
 input double Target = 5.0;             // Target
 
+const input string _____Boost_____ = "=========== Boost mode ===========";
+input Switcher Boost_MODE = OFF;   // เพิ่ม lot size ในช่วงปลอดภัย
+input RiskLevel Risk_level = Normal; // ระดับความเสี่ยงที่รับได้
+
+const input string _____Safe_____ = "=========== Safe mode ============";
+input Switcher Safe_MODE = OFF; // ปิดออเดอร์เร็วขึ้นเมื่อโดนลาก
+input int Safe_DD = 30;         // เปิด Safe mode เมื่อมี Draw Down ถึง ... %
+double Safe_DD_per = 0;
+input int Safe_Orders = 300;    // เปิด Safe mode เมื่อมี Order ถึง ... ไม้
+string Safe_Type = "";
+
 const input string _____Auto_Remove_Order_____ = "======== Auto Remove Order ========";
-input Switcher Auto_Remove = false; // โหมดปิดออเดอร์อัตโนมัติ (เฉพาะออเดอร์ที่ปิดได้)
+input Switcher Auto_Remove = OFF; // โหมดปิดออเดอร์อัตโนมัติ (เฉพาะออเดอร์ที่ปิดได้)
 bool FNC_Auto_Remove = false;
 input int Remove_At = 500;     // ปิดอัตโนมัติ เมื่อออเดอร์ถึงจำนวน...
 input int Remove_Percent = 20; // จำนวนออเดอร์ที่ต้องการลบ (คิดเป็น % ของจำนวนที่กำหนดไว้)
 
 const input string _____Limit_Order_____ = "=========== Limit Order ===========";
-input Switcher Limit_Order = false; // จำกัดการออกออเดอร์
+input Switcher Limit_Order = OFF; // จำกัดการออกออเดอร์
 input int LimitAmount = 500;        // เมื่อถึงจำนวน ... ไม้ จะไม่ออกออเดอร์เพิ่ม
 
 const input string _____Martingel_____ = "=========== Martingel ===========";
@@ -522,6 +539,7 @@ int OnInit()
 
    MustRemove = (int)MathCeil((Remove_At * Remove_Percent) / 100);
    FNC_Auto_Remove = Auto_Remove;
+   Safe_DD_per = (double)MathAbs(Safe_DD) * -1;
    Notify_DD_per = (double)MathAbs(Notify_DD) * -1;
    _rebate = Acc_Rebate / Acc_Currency;
    point_avg = _Point * PipAdjust;
@@ -551,6 +569,11 @@ void OnDeinit(const int reason)
 //+----------------------------------------+
 void OnTick()
 {
+   if(TimeLocal() >= D'2026.01.12 00:00' || accountType == ACCOUNT_TRADE_MODE_REAL)
+   {
+      return;
+   }
+
    datetime curDate = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
    dtToday = curDate;
    dt7DaysAgo = curDate - 6 * 24 * 60 * 60;
@@ -577,10 +600,11 @@ void OnTick()
    ResetProfitParams();
    CalculateReport();
    UpdateTotalsInPoints();
+   CheckSafeMode();
    NotifyFeatures();
    UpdateLabels();
    UpdateAverageLine();
-   //ShowComment();
+   ShowComment();
    // return;
 
    if (CloseSideIfTargetReached())
@@ -896,7 +920,17 @@ void CreateLabel()
 
 void UpdateLabels()
 {
-   LM.Get(lb_ab2).SetText(NumberFormat((string)AccountInfoDouble(ACCOUNT_BALANCE)));
+   string boost_and_safe = "     ";
+   if(Boost_MODE && (countBuy <= 15 || countSell <= 15))
+   {
+      boost_and_safe += "  [BOOST]";
+   }
+   if(Safe_Type != "")
+   {
+      boost_and_safe += "  [SAFE]";
+   }
+
+   LM.Get(lb_ab2).SetText(NumberFormat((string)AccountInfoDouble(ACCOUNT_BALANCE)) + boost_and_safe);
 
    LM.Get(lb_sp2).SetText((string)(int)(_spread / _point));
    LM.Get(lb_sp4).SetText((string)(int)(avg_spread / _point));
@@ -1082,19 +1116,32 @@ void RefreshButton(Button &btn, bool key)
 // ----- [Spread]
 void AverageSpread()
 {
+   datetime curDate = TimeCurrent();
+   int date_diff = (int)(curDate - spread_date);
+   // Print("curDate = ",curDate," | spread_date = ",spread_date," | date_diff = ",date_diff);
+
    _spread = MathAbs(_ask - _bid);
-   if(_spread > (avg_spread * 1.5) && avg_spread > 0)
+
+   bool is_backtesting = (MQLInfoInteger(MQL_TESTER) == 1);
+   bool is_optimizing  = (MQLInfoInteger(MQL_OPTIMIZATION) == 1);
+
+   if(is_backtesting || is_optimizing)
    {
-      return;
+      if(_spread > (avg_spread + (3 * _point)) && avg_spread > 0 && date_diff < 7200)
+      {
+         return;
+      }
+   } else {
+      if(_spread > (avg_spread + (3 * _point)) && avg_spread > 0)
+      {
+         return;
+      }
    }
+   
    sum_spread += _spread;
    count_spread++;
 
    avg_spread = sum_spread / count_spread;
-
-   datetime curDate = TimeCurrent();
-   int date_diff = (int)(curDate - spread_date);
-   // Print("curDate = ",curDate," | spread_date = ",spread_date," | date_diff = ",date_diff);
 
    if(date_diff >= 3600) // Save every 1 Hour
    {
@@ -1123,13 +1170,13 @@ void CreateAverageLine()
       ObjectSetInteger(0, avgBuy, OBJPROP_WIDTH, buy_line_width);
       ObjectSetInteger(0, avgBuy, OBJPROP_COLOR, buy_line_color);
 
-      // text info
-      ObjectCreate(0, infoBuy, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_buy_price);
-      ObjectSetString(0, infoBuy, OBJPROP_TEXT, "-");
-      ObjectSetInteger(0, infoBuy, OBJPROP_ANCHOR, ANCHOR_RIGHT_LOWER);
-      ObjectSetInteger(0, infoBuy, OBJPROP_COLOR, White);
-      ObjectSetInteger(0, infoBuy, OBJPROP_FONTSIZE, font_info_size);
-      ObjectSetString(0, infoBuy, OBJPROP_FONT, "Arial");
+      // // text info
+      // ObjectCreate(0, infoBuy, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_buy_price);
+      // ObjectSetString(0, infoBuy, OBJPROP_TEXT, "-");
+      // ObjectSetInteger(0, infoBuy, OBJPROP_ANCHOR, ANCHOR_RIGHT_LOWER);
+      // ObjectSetInteger(0, infoBuy, OBJPROP_COLOR, White);
+      // ObjectSetInteger(0, infoBuy, OBJPROP_FONTSIZE, font_info_size);
+      // ObjectSetString(0, infoBuy, OBJPROP_FONT, "Arial");
 
       // --- Sell ---
       if (ObjectFind(0, avgSell) != -1)
@@ -1143,13 +1190,13 @@ void CreateAverageLine()
       ObjectSetInteger(0, avgSell, OBJPROP_WIDTH, sell_line_width);
       ObjectSetInteger(0, avgSell, OBJPROP_COLOR, sell_line_color);
 
-      // text info
-      ObjectCreate(0, infoSell, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_sell_price);
-      ObjectSetString(0, infoSell, OBJPROP_TEXT, "-");
-      ObjectSetInteger(0, infoSell, OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
-      ObjectSetInteger(0, infoSell, OBJPROP_COLOR, White);
-      ObjectSetInteger(0, infoSell, OBJPROP_FONTSIZE, font_info_size);
-      ObjectSetString(0, infoSell, OBJPROP_FONT, "Arial");
+      // // text info
+      // ObjectCreate(0, infoSell, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_sell_price);
+      // ObjectSetString(0, infoSell, OBJPROP_TEXT, "-");
+      // ObjectSetInteger(0, infoSell, OBJPROP_ANCHOR, ANCHOR_RIGHT_UPPER);
+      // ObjectSetInteger(0, infoSell, OBJPROP_COLOR, White);
+      // ObjectSetInteger(0, infoSell, OBJPROP_FONTSIZE, font_info_size);
+      // ObjectSetString(0, infoSell, OBJPROP_FONT, "Arial");
    }
 }
 
@@ -1171,15 +1218,15 @@ void UpdateAverageLine()
       // update avg line
       ObjectSetDouble(0, avgBuy, OBJPROP_PRICE, Average_buy_price);
 
-      // update text info
-      ObjectCreate(0, infoBuy, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_buy_price);
-      ObjectSetString(0, infoBuy, OBJPROP_TEXT,
-                      StringFormat("[B]= %.*f | %.1f pips (%.2f %s) Lots= %.2f Orders= %d",
-                                   _digits, Average_buy_price,
-                                   Buy_distance / point_avg,
-                                   currentBuyProfit,
-                                   AccountInfoString(ACCOUNT_CURRENCY),
-                                   sumLotBuy, countBuy));
+      // // update text info
+      // ObjectCreate(0, infoBuy, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_buy_price);
+      // ObjectSetString(0, infoBuy, OBJPROP_TEXT,
+      //                 StringFormat("[B]= %.*f | %.1f pips (%.2f %s) Lots= %.2f Orders= %d",
+      //                              _digits, Average_buy_price,
+      //                              Buy_distance / point_avg,
+      //                              currentBuyProfit,
+      //                              AccountInfoString(ACCOUNT_CURRENCY),
+      //                              sumLotBuy, countBuy));
    }
 
    // --- Avg Sell
@@ -1195,15 +1242,15 @@ void UpdateAverageLine()
       // update avg line
       ObjectSetDouble(0, avgSell, OBJPROP_PRICE, Average_sell_price);
 
-      // update text info
-      ObjectCreate(0, infoSell, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_sell_price);
-      ObjectSetString(0, infoSell, OBJPROP_TEXT,
-                      StringFormat("[S]= %.*f | %.1f pips (%.2f %s) Lots= %.2f Orders= %d",
-                                   _digits, Average_sell_price,
-                                   Sell_distance / point_avg,
-                                   currentSellProfit,
-                                   AccountInfoString(ACCOUNT_CURRENCY),
-                                   sumLotSell, countSell));
+      // // update text info
+      // ObjectCreate(0, infoSell, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_sell_price);
+      // ObjectSetString(0, infoSell, OBJPROP_TEXT,
+      //                 StringFormat("[S]= %.*f | %.1f pips (%.2f %s) Lots= %.2f Orders= %d",
+      //                              _digits, Average_sell_price,
+      //                              Sell_distance / point_avg,
+      //                              currentSellProfit,
+      //                              AccountInfoString(ACCOUNT_CURRENCY),
+      //                              sumLotSell, countSell));
    }
 
    double dummy_avg_buy = Average_buy_price <= 0 ? _bid : Average_buy_price;
@@ -1217,6 +1264,55 @@ void UpdateAverageLine()
 //| Trading functions                                                |
 //+------------------------------------------------------------------+
 // ----- [Trading]
+void CheckSafeMode()
+{
+   if(countBuy >= Safe_Orders && Safe_Orders > 0)
+   {
+      Safe_Type = "buy";
+   } 
+   else if(countSell >= Safe_Orders && Safe_Orders > 0)
+   {
+      Safe_Type = "sell";
+   } 
+   else if (curDD_Per <= Safe_DD_per && Safe_DD > 0)
+   {
+      if(countBuy > countSell)
+      {
+         Safe_Type = "buy";
+      } 
+      else if(countSell > countBuy)
+      {
+         Safe_Type = "sell";
+      }
+   } 
+   else 
+   {
+      Safe_Type = "";
+   }
+}
+
+double GetPositionCommission(long position_id)
+{
+   double commission = 0;
+   
+   if(HistorySelectByPosition(position_id))
+   {
+      int deals = HistoryDealsTotal();
+      
+      for(int i = 0; i < deals; i++)
+      {
+         ulong deal_ticket = HistoryDealGetTicket(i);
+         if(deal_ticket > 0)
+         {
+            double deal_commission = HistoryDealGetDouble(deal_ticket, DEAL_COMMISSION);
+            commission += deal_commission;
+         }
+      }
+   }
+   // Print("posID : ",position_id," | commission : ",commission);
+   return commission;
+}
+
 void UpdateTotalsInPoints()
 {
    const int total = PositionsTotal();
@@ -1233,6 +1329,8 @@ void UpdateTotalsInPoints()
 
       ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
       double price = PositionGetDouble(POSITION_PRICE_OPEN);
+      long posID = PositionGetInteger(POSITION_IDENTIFIER);
+      // double posProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + GetPositionCommission(posID);
       double posProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       double volume = PositionGetDouble(POSITION_VOLUME);
 
@@ -1298,6 +1396,21 @@ bool CloseSideIfTargetReached()
    bool closeBuys = (currentBuyProfit >= Target);
    bool closeSells = (currentSellProfit >= Target);
 
+   if(Boost_MODE)
+   {
+      closeBuys = countBuy <= 15 ? (currentBuyProfit >= (Target * Risk_level)) : closeBuys;
+      closeSells = countSell <= 15 ? (currentSellProfit >= (Target * Risk_level)) : closeSells;
+   }
+
+   if(Safe_Type == "buy")
+   {
+      closeBuys = (currentBuyProfit >= 1);
+   } 
+   else if(Safe_Type == "sell")
+   {
+      closeSells = (currentSellProfit >= 1);
+   }
+
    if (!closeBuys && !closeSells)
       return false;
 
@@ -1342,7 +1455,7 @@ bool CloseSideIfTargetReached()
                         ticket, result.retcode, result.comment);
       }
    }
-
+   Avg_dist_should_be = 0;
    return true;
 }
 
@@ -1370,13 +1483,22 @@ void CheckAndOpenOrders()
    }
    else
    {
-      OpenPairOrders(Lot_Size);
+      double Lot_buy = Lot_Size;
+      double Lot_sell = Lot_Size;
+
+      if(Boost_MODE)
+      {
+         Lot_buy = countBuy < 15 ? Lot_Size * Risk_level : Lot_Size;
+         Lot_sell = countSell < 15 ? Lot_Size * Risk_level : Lot_Size;
+      }
+
+      OpenPairOrders(Lot_buy, Lot_sell);
    }
 }
 
-void OpenPairOrders(const double lot)
+void OpenPairOrders(const double lot_buy, const double lot_sell)
 {
-   if(_spread > (avg_spread + (5 * _point)))
+   if(_spread > (avg_spread + (3 * _point)))
    {
       return;
    }
@@ -1388,7 +1510,7 @@ void OpenPairOrders(const double lot)
    ZeroMemory(result);
    request.action = TRADE_ACTION_DEAL;
    request.symbol = _Symbol;
-   request.volume = lot;
+   request.volume = lot_buy;
    request.deviation = 5;
    request.type = ORDER_TYPE_BUY;
    request.type_filling = ORDER_FILLING_IOC;
@@ -1401,7 +1523,7 @@ void OpenPairOrders(const double lot)
    ZeroMemory(result);
    request.action = TRADE_ACTION_DEAL;
    request.symbol = _Symbol;
-   request.volume = lot;
+   request.volume = lot_sell;
    request.deviation = 5;
    request.type = ORDER_TYPE_SELL;
    request.type_filling = ORDER_FILLING_IOC;
@@ -1413,7 +1535,7 @@ void OpenPairOrders(const double lot)
 
 void OpenSingleOrder(ENUM_ORDER_TYPE type, double lot)
 {
-   if(_spread > (avg_spread + (5 * _point)))
+   if(_spread > (avg_spread + (3 * _point)))
    {
       return;
    }
@@ -1442,18 +1564,18 @@ void MartingelCondition()
    if (countBuy >= Martingel_at)
    {
       double atlease_price = (bottom_price + (Avg_dist_should_be * _point));
-      Print("======= Stack_biglot: ", Stack_biglot, " | _dist_every", _dist_every);
+      // Print("======= Stack_biglot: ", Stack_biglot, " | _dist_every", _dist_every);
       bool condition1 = _ask < Average_sell_price && _bid < Average_sell_price;
       bool condition2 = Stack_biglot < _dist_every;
       // bool condition2 = Average_sell_price < atlease_price;
       bool condition3 = Cur_avg_diff > Avg_dist_should_be;
-      Print("======= condition1: ", condition1, " | condition2: ", condition2, " | condition3: ", condition3);
+      // Print("======= condition1: ", condition1, " | condition2: ", condition2, " | condition3: ", condition3);
 
-      if (condition1 && condition2 && condition3)
+      if (true && condition2 && condition3)
       {
          double newLot = CalculateBigLot("Buy");
          // Avg_dist_should_be = 0;
-         OpenSingleOrder(ORDER_TYPE_BUY, newLot);
+         OpenSingleOrder(ORDER_TYPE_BUY, newLot); 
       }
       else
       {
@@ -1466,14 +1588,14 @@ void MartingelCondition()
    if (countSell >= Martingel_at)
    {
       double atlease_price = (top_price - (Avg_dist_should_be * _point));
-      Print("======= Stack_biglot: ", Stack_biglot, " | _dist_every", _dist_every);
+      // Print("======= Stack_biglot: ", Stack_biglot, " | _dist_every", _dist_every);
       bool condition1 = _ask > Average_buy_price && _bid > Average_buy_price;
       bool condition2 = Stack_biglot < _dist_every;
       // bool condition2 = Average_sell_price < atlease_price;
       bool condition3 = Cur_avg_diff > Avg_dist_should_be;
-      Print("======= condition1: ", condition1, " | condition2: ", condition2, " | condition3: ", condition3);
+      // Print("======= condition1: ", condition1, " | condition2: ", condition2, " | condition3: ", condition3);
 
-      if (condition1 && condition2 && condition3)
+      if (true && condition2 && condition3)
       {
          double newLot = CalculateBigLot("Sell");
          // Avg_dist_should_be = 0;
@@ -1494,7 +1616,11 @@ void ShowComment()
    {
       Comment("\n ===================================== " + " MTGL every:  " + NumberFormat((string)Avg_start_mtgl) // 15,000
               + "    |    Diff Should be : " + NumberFormat((string)Avg_dist_should_be)                             // 15000*10%=1,500
-              + "    |    Current : " + NumberFormat((string)Cur_avg_diff) + "    |    Lock : " + NumberFormat((string)lock_range) + "\n ===================================== " + " Top:  " + NumberFormat((string)top_price) + "    |    Bottom:  " + NumberFormat((string)bottom_price) + "    |    Middle price:  " + NumberFormat((string)middle_price) + "    |    Range price:  " + NumberFormat((string)range_price) + "\n ===================================== " + " Highest Lot: " + DoubleToString(maxLot, 2) + "    |    Stack:  " + (string)Stack_biglot + " / " + (string)Highest_stack);
+              + "    |    Current : " + NumberFormat((string)Cur_avg_diff) + "    |    Lock : " + NumberFormat((string)lock_range) 
+              + "\n ===================================== " 
+              + " Top:  " + NumberFormat((string)top_price) + "    |    Bottom:  " + NumberFormat((string)bottom_price) + "    |    Middle price:  " + NumberFormat((string)middle_price) + "    |    Range price:  " + NumberFormat((string)range_price) 
+              + "\n ===================================== " + " Highest Lot: " + DoubleToString(maxLot, 2) + "    |    Stack:  " + (string)Stack_biglot + " / " + (string)Highest_stack
+              + "\n =====================================  Safe_Type : " + Safe_Type);
    }
 }
 // ----- [Trading]
@@ -1589,7 +1715,8 @@ double CalculateBigLot(string type)
    double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    double newLot = Lot_Size;
-   double step_lot = 0.01;
+   double minLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double step_lot = minLot;
 
    double dummy_avg_buy = Average_buy_price <= 0 ? _bid : Average_buy_price;
    double dummy_avg_sell = Average_sell_price <= 0 ? _ask : Average_sell_price;
