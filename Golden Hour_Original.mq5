@@ -120,26 +120,26 @@ input Switcher Boost_MODE = OFF;   // เพิ่ม lot size ในช่ว�
 input RiskLevel Risk_level = Normal; // ระดับความเสี่ยงที่รับได้
 
 const input string _____Safe_____ = "=========== Safe mode ============";
-input Switcher Safe_MODE = OFF; // ช่วยลด DD เมื่อโดนลาก
-input int Safe_DD = 20;         // เปิด Safe mode เมื่อมี Draw Down ถึง ... %
+input Switcher Safe_MODE = OFF; // ปิดออเดอร์เร็วขึ้นเมื่อโดนลาก
+input int Safe_DD = 30;         // เปิด Safe mode เมื่อมี Draw Down ถึง ... %
 double Safe_DD_per = 0;
-double Safe_min_DD = 0;
+input int Safe_Orders = 300;    // เปิด Safe mode เมื่อมี Order ถึง ... ไม้
 string Safe_Type = "";
 
-const string _____Auto_Remove_Order_____ = "======== Auto Remove Order ========";
-Switcher Auto_Remove = OFF; // โหมดปิดออเดอร์อัตโนมัติ (เฉพาะออเดอร์ที่ปิดได้)
+const input string _____Auto_Remove_Order_____ = "======== Auto Remove Order ========";
+input Switcher Auto_Remove = OFF; // โหมดปิดออเดอร์อัตโนมัติ (เฉพาะออเดอร์ที่ปิดได้)
 bool FNC_Auto_Remove = false;
-int Remove_At = 500;     // ปิดอัตโนมัติ เมื่อออเดอร์ถึงจำนวน...
-int Remove_Percent = 20; // จำนวนออเดอร์ที่ต้องการลบ (คิดเป็น % ของจำนวนที่กำหนดไว้)
+input int Remove_At = 500;     // ปิดอัตโนมัติ เมื่อออเดอร์ถึงจำนวน...
+input int Remove_Percent = 20; // จำนวนออเดอร์ที่ต้องการลบ (คิดเป็น % ของจำนวนที่กำหนดไว้)
 
 const input string _____Limit_Order_____ = "=========== Limit Order ===========";
 input Switcher Limit_Order = OFF; // จำกัดการออกออเดอร์
 input int LimitAmount = 500;        // เมื่อถึงจำนวน ... ไม้ จะไม่ออกออเดอร์เพิ่ม
 
-const string _____Martingel_____ = "=========== Martingel ===========";
-Switcher Martingel_MODE = OFF; // โหมด Martingel
-int Martingel_at = 100;        // Martingel เมื่อ Buy หรือ Sell ถึงจำนวน ... ไม้
-double Limit_lot_size = 10.00; // กำหนด Lot size สูงสุดที่จะออกได้
+const input string _____Martingel_____ = "=========== Martingel ===========";
+input Switcher Martingel_MODE = OFF; // โหมด Martingel
+input int Martingel_at = 100;        // Martingel เมื่อ Buy หรือ Sell ถึงจำนวน ... ไม้
+input double Limit_lot_size = 10.00; // กำหนด Lot size สูงสุดที่จะออกได้
 double Avg_dist_should_be = 0;
 int Avg_start_mtgl = 0;
 
@@ -433,14 +433,6 @@ KeyValue arrLoss[];
 KeyValue arrProfit[];
 KeyValue arrDelete[];
 
-// ----- [Safe Mode]
-KeyValue arrSafeLoss[];
-KeyValue arrSafeProfit[];
-double SafeSumLoss = 0;
-double SafeBuyProfit = 0;
-double SafeSellProfit = 0;
-// ----- [Safe Mode]
-
 int MustRemove = 0;
 int removed = 0;
 int removed_buy = 0;
@@ -548,11 +540,6 @@ int OnInit()
    MustRemove = (int)MathCeil((Remove_At * Remove_Percent) / 100);
    FNC_Auto_Remove = Auto_Remove;
    Safe_DD_per = (double)MathAbs(Safe_DD) * -1;
-   Safe_min_DD = Safe_DD_per + 10;
-   if(Safe_min_DD >= 0)
-   {
-      Safe_min_DD = -10;
-   }
    Notify_DD_per = (double)MathAbs(Notify_DD) * -1;
    _rebate = Acc_Rebate / Acc_Currency;
    point_avg = _Point * PipAdjust;
@@ -582,10 +569,10 @@ void OnDeinit(const int reason)
 //+----------------------------------------+
 void OnTick()
 {
-   // if(TimeLocal() >= D'2026.01.12 00:00' || accountType == ACCOUNT_TRADE_MODE_REAL)
-   // {
-   //    return;
-   // }
+   if(TimeLocal() >= D'2026.01.12 00:00' || accountType == ACCOUNT_TRADE_MODE_REAL)
+   {
+      return;
+   }
 
    datetime curDate = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
    dtToday = curDate;
@@ -613,29 +600,16 @@ void OnTick()
    ResetProfitParams();
    CalculateReport();
    UpdateTotalsInPoints();
+   CheckSafeMode();
    NotifyFeatures();
    UpdateLabels();
    UpdateAverageLine();
    ShowComment();
    // return;
 
-   if(_spread > (avg_spread + (3 * _point)))
+   if (CloseSideIfTargetReached())
    {
       return;
-   }
-
-   if(Safe_Type != "")
-   {
-      if(CloseTargetSafeMode())
-      {
-         return;
-      }
-   } 
-   else {
-      if (CloseSideIfTargetReached())
-      {
-         return;
-      }
    }
 
    if (totalOrders >= Remove_At && FNC_Auto_Remove)
@@ -1290,23 +1264,30 @@ void UpdateAverageLine()
 //| Trading functions                                                |
 //+------------------------------------------------------------------+
 // ----- [Trading]
-bool CheckSafeMode()
+void CheckSafeMode()
 {
-   if(Safe_Type != "")
+   if(countBuy >= Safe_Orders && Safe_Orders > 0)
    {
-      if(curDD_Per >= Safe_min_DD) 
+      Safe_Type = "buy";
+   } 
+   else if(countSell >= Safe_Orders && Safe_Orders > 0)
+   {
+      Safe_Type = "sell";
+   } 
+   else if (curDD_Per <= Safe_DD_per && Safe_DD > 0)
+   {
+      if(countBuy > countSell)
       {
-         Safe_Type = "";
-         return false;
-      }
-      return true;
-
-   } else {
-      if (curDD_Per <= Safe_DD_per && Safe_DD > 0)
-      {
-         return true;
+         Safe_Type = "buy";
       } 
-      return false;
+      else if(countSell > countBuy)
+      {
+         Safe_Type = "sell";
+      }
+   } 
+   else 
+   {
+      Safe_Type = "";
    }
 }
 
@@ -1336,8 +1317,6 @@ void UpdateTotalsInPoints()
 {
    const int total = PositionsTotal();
 
-   bool OpenSafeMode = Safe_MODE ? CheckSafeMode() : false;
-
    //--- open positions
    for (int i = 0; i < total; i++)
    {
@@ -1360,30 +1339,12 @@ void UpdateTotalsInPoints()
       {
          highest_loss = highest_loss == 0 ? posProfit : posProfit < highest_loss ? posProfit
                                                                                  : highest_loss;
-         if(OpenSafeMode)
-         {
-            int posTicket = (int)ticket;
-            InsertArraySorted(arrSafeLoss, "ASC", posTicket, (int)type, volume, price, posProfit, PositionGetDouble(POSITION_SWAP));
-         }
       }
       // profit (+)
       else if (posProfit > 0)
       {
          highest_profit = highest_profit == 0 ? posProfit : posProfit > highest_profit ? posProfit
                                                                                        : highest_profit;
-         if(OpenSafeMode)
-         {
-            int posTicket = (int)ticket;
-            AddKeyValue(arrSafeProfit, posTicket, (int)type, volume, price, posProfit, PositionGetDouble(POSITION_SWAP));
-            if (type == POSITION_TYPE_BUY)
-            {
-               SafeBuyProfit += posProfit;
-            } 
-            else if (type == POSITION_TYPE_SELL)
-            {
-               SafeSellProfit += posProfit;
-            }
-         }
       }
 
       if (type == POSITION_TYPE_BUY)
@@ -1418,25 +1379,6 @@ void UpdateTotalsInPoints()
    // --- Casual
    NetProfitTotal = currentBuyProfit + currentSellProfit;
 
-   // --- Safe Mode
-   if(OpenSafeMode)
-   {
-      if(countBuy > countSell)
-      {
-         Safe_Type = "buy";
-      } 
-      else if(countSell > countBuy)
-      {
-         Safe_Type = "sell";
-      }
-
-      ArrayResize(arrSafeLoss, 5);
-      for (int i = 0; i < ArraySize(arrSafeLoss); i++)
-      {
-         SafeSumLoss += arrSafeLoss[i].profit;
-      }
-   }
-
    // --- Martingel OUT Loop
    middle_price = (top_price + bottom_price) / 2;
    range_price = (top_price - bottom_price) / _point;
@@ -1458,6 +1400,15 @@ bool CloseSideIfTargetReached()
    {
       closeBuys = countBuy <= 15 ? (currentBuyProfit >= (Target * Risk_level)) : closeBuys;
       closeSells = countSell <= 15 ? (currentSellProfit >= (Target * Risk_level)) : closeSells;
+   }
+
+   if(Safe_Type == "buy")
+   {
+      closeBuys = (currentBuyProfit >= 1);
+   } 
+   else if(Safe_Type == "sell")
+   {
+      closeSells = (currentSellProfit >= 1);
    }
 
    if (!closeBuys && !closeSells)
@@ -1504,57 +1455,8 @@ bool CloseSideIfTargetReached()
                         ticket, result.retcode, result.comment);
       }
    }
-
    Avg_dist_should_be = 0;
    return true;
-}
-
-bool CloseTargetSafeMode()
-{
-   double diff_profit = 0;
-
-   if(Safe_Type == "buy")
-   {
-      diff_profit = SafeSellProfit + SafeSumLoss;
-   } 
-   else if(Safe_Type == "sell")
-   {
-      diff_profit = SafeBuyProfit + SafeSumLoss;
-   }
-
-   if(diff_profit >= Target)
-   {
-      int safe_removed = 0;
-
-      for (int i = 0; i < ArraySize(arrSafeProfit); i++)
-      {
-         if(Safe_Type == "buy" && arrSafeProfit[i].type == POSITION_TYPE_BUY)
-         {
-            continue;
-         } 
-         else if (Safe_Type == "sell" && arrSafeProfit[i].type == POSITION_TYPE_SELL)
-         {
-            continue;
-         }
-
-         if (ClosePositionByTicket(arrSafeProfit[i].ticket, arrSafeProfit[i].lotsize))
-         {
-            safe_removed++;
-         }
-      }
-      for (int i = 0; i < ArraySize(arrSafeLoss); i++)
-      {
-         if (ClosePositionByTicket(arrSafeLoss[i].ticket, arrSafeLoss[i].lotsize))
-         {
-            safe_removed++;
-         }
-      }
-
-      Avg_dist_should_be = 0;
-      return true;
-   }
-
-   return false;
 }
 
 void CheckAndOpenOrders()
@@ -1596,6 +1498,11 @@ void CheckAndOpenOrders()
 
 void OpenPairOrders(const double lot_buy, const double lot_sell)
 {
+   if(_spread > (avg_spread + (3 * _point)))
+   {
+      return;
+   }
+
    MqlTradeRequest request;
    MqlTradeResult result;
 
@@ -1628,6 +1535,11 @@ void OpenPairOrders(const double lot_buy, const double lot_sell)
 
 void OpenSingleOrder(ENUM_ORDER_TYPE type, double lot)
 {
+   if(_spread > (avg_spread + (3 * _point)))
+   {
+      return;
+   }
+
    MqlTradeRequest request;
    MqlTradeResult result;
 
@@ -1708,9 +1620,7 @@ void ShowComment()
               + "\n ===================================== " 
               + " Top:  " + NumberFormat((string)top_price) + "    |    Bottom:  " + NumberFormat((string)bottom_price) + "    |    Middle price:  " + NumberFormat((string)middle_price) + "    |    Range price:  " + NumberFormat((string)range_price) 
               + "\n ===================================== " + " Highest Lot: " + DoubleToString(maxLot, 2) + "    |    Stack:  " + (string)Stack_biglot + " / " + (string)Highest_stack
-              + "\n =====================================  Safe_Type : " + Safe_Type + " | Min_DD : " + (string)Safe_min_DD 
-              + "\n =====================================  Safe_Arr : " + (string)ArraySize(arrSafeLoss) + " | Loss : " + (string)SafeSumLoss
-            );
+              + "\n =====================================  Safe_Type : " + Safe_Type);
    }
 }
 // ----- [Trading]
@@ -1729,12 +1639,6 @@ void ResetProfitParams()
    currentBuyProfit = 0.0;
    currentSellProfit = 0.0;
    NetProfitTotal = 0.0;
-
-   ArrayResize(arrSafeLoss, 0);
-   ArrayResize(arrSafeProfit, 0);
-   SafeSumLoss = 0;
-   SafeBuyProfit = 0;
-   SafeSellProfit = 0;
 
    highest_loss = 0;
    highest_profit = 0;
