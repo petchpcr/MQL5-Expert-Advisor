@@ -50,7 +50,7 @@ public:
       int step = 25;
 
       // Band & Page
-      if(!CreateLabel(m_lbl_band, "Local FX ให้โรบอทช่วยคุณเทรด", "BandKey", x1_key, y, x2_key, y+20)) return false;
+      if(!CreateLabel(m_lbl_band, "FB: Local FX", "BandKey", x1_key, y, x2_key, y+20)) return false;
       y += step;
       if(!CreateLabel(m_lbl_page, "www.facebook.com/LocalFX4U", "PageKey", x1_key, y, x2_key, y+20)) return false;
       
@@ -367,12 +367,23 @@ public:
              border.ColorBackground(C'30,30,30');
              border.ColorBorder(C'60,60,60');
          }
+          // Generic Labels (Apply Segoe UI globally)
+          else if(StringFind(name, "Lbl") >= 0)
+          {
+              CLabel* lbl = (CLabel*)control;
+              lbl.Font("Segoe UI");
+          }
       }
       
       color gray = C'128,128,128';
       // Data Labels Style
       StyleLabel(m_lbl_band, C'102, 140, 255');
+      m_lbl_band.Font("Segoe UI Bold");
+      m_lbl_band.FontSize(15);
+      
       StyleLabel(m_lbl_page, C'179, 198, 255');
+      m_lbl_page.Font("Segoe UI Bold");
+      m_lbl_page.FontSize(11);
 
       StyleLabel(m_lbl_balance_key, gray);
       StyleLabel(m_lbl_balance_val, clrWhite);
