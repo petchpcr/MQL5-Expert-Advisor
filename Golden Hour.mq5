@@ -533,7 +533,7 @@ int OnInit()
 
    if(isVIP)
    {
-      show_avg_line = false;
+      show_avg_line = true;
    } else {
       datetime dtDecode = (datetime)(dateApprove - (acc_id * 7));
       int diff_days = (int)(TimeCurrent() / 86400) - (int)(dtDecode / 86400);
@@ -563,8 +563,8 @@ int OnInit()
    CreateAverageLine();
    CreateLabel();
    SortObject();
-   RefreshButton(objButton[0], FNC_Auto_Remove);
-   RefreshButton(objButton[1], false);
+   // RefreshButton(objButton[0], FNC_Auto_Remove);
+   // RefreshButton(objButton[1], false);
 
    return (INIT_SUCCEEDED);
 }
@@ -574,8 +574,19 @@ int OnInit()
 //+----------------------------------------+
 void OnDeinit(const int reason)
 {
-   ObjectDelete(0, BTN1);
-   ObjectDelete(0, BTN2);
+   // if(ObjectFind(0, BTN1) != -1)
+   //    ObjectDelete(0, BTN1);
+   // if(ObjectFind(0, BTN2) != -1)
+   //    ObjectDelete(0, BTN2);
+   if(ObjectFind(0, avgBuy) != -1)
+      ObjectDelete(0, avgBuy);
+   if(ObjectFind(0, infoBuy) != -1)
+      ObjectDelete(0, infoBuy);
+   if(ObjectFind(0, avgSell) != -1)
+      ObjectDelete(0, avgSell);
+   if(ObjectFind(0, infoSell) != -1)
+      ObjectDelete(0, infoSell);
+
    LM.DeleteAll();
    Comment("");
 }
@@ -652,14 +663,14 @@ void OnTick()
 // ----- [All objects]
 void SortObject()
 {
-   // ------------- Label -------------
-   if (Label_Position == Button_Position)
-   {
-      for (int i = 0; i < LM.Count(); i++)
-      {
-         LM.Get(i).MoveY(LM.Get(i).y + 60);
-      }
-   }
+   // // ------------- Label -------------
+   // if (Label_Position == Button_Position)
+   // {
+   //    for (int i = 0; i < LM.Count(); i++)
+   //    {
+   //       LM.Get(i).MoveY(LM.Get(i).y + 60);
+   //    }
+   // }
 
    if (Label_Position == TOP_RIGHT || Label_Position == BOTTOM_RIGHT)
    {
@@ -694,6 +705,7 @@ void SortObject()
       }
    }
 
+   return;
    // ------------- Button -------------
    int btnX = 0;
    int space = 10;
@@ -1626,6 +1638,13 @@ void OpenPairOrders(const double lot_buy, const double lot_sell)
 {
    MqlTradeRequest request;
    MqlTradeResult result;
+   MqlTick         tick;
+
+   if(!SymbolInfoTick(_Symbol, tick))
+   {
+      Print("Failed to get tick");
+      return;
+   }
 
    ZeroMemory(request);
    ZeroMemory(result);
@@ -1634,6 +1653,7 @@ void OpenPairOrders(const double lot_buy, const double lot_sell)
    request.volume = lot_buy;
    request.deviation = 5;
    request.type = ORDER_TYPE_BUY;
+   request.price = NormalizeDouble(tick.ask, _Digits);
    request.type_filling = ORDER_FILLING_IOC;
    request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
    if (!OrderSend(request, result))
@@ -1647,6 +1667,7 @@ void OpenPairOrders(const double lot_buy, const double lot_sell)
    request.volume = lot_sell;
    request.deviation = 5;
    request.type = ORDER_TYPE_SELL;
+   request.price = NormalizeDouble(tick.bid, _Digits);
    request.type_filling = ORDER_FILLING_IOC;
    request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
    if (!OrderSend(request, result))
@@ -1658,7 +1679,14 @@ void OpenSingleOrder(ENUM_ORDER_TYPE type, double lot)
 {
    MqlTradeRequest request;
    MqlTradeResult result;
+   MqlTick         tick;
 
+   if(!SymbolInfoTick(_Symbol, tick))
+   {
+      Print("Failed to get tick");
+      return;
+   }
+   
    ZeroMemory(request);
    ZeroMemory(result);
    request.action = TRADE_ACTION_DEAL;
@@ -1666,6 +1694,14 @@ void OpenSingleOrder(ENUM_ORDER_TYPE type, double lot)
    request.volume = lot;
    request.deviation = 5;
    request.type = type;
+   if(type == ORDER_TYPE_BUY)
+   {
+      request.price = NormalizeDouble(tick.ask, _Digits);
+   } 
+   else if(type == ORDER_TYPE_SELL) 
+   {
+      request.price = NormalizeDouble(tick.bid, _Digits);
+   }
    request.type_filling = ORDER_FILLING_IOC;
    request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
    if (!OrderSend(request, result))
