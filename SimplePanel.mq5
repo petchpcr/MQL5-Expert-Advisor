@@ -54,7 +54,7 @@ public:
       y += step;
       if(!CreateLabel(m_lbl_page, "www.facebook.com/LocalFX4U", "PageKey", x1_key, y, x2_key, y+20)) return false;
       
-      y = 60;
+      y = 60; // Reset for Data Section
 
       // Balance
       if(!CreateLabel(m_lbl_balance_key, "Balance:", "BalKey", x1_key, y, x2_key, y+20)) return false;
@@ -188,6 +188,36 @@ public:
            y += 20;
        }
  
+       y += 10;
+       // -- Separator -----------------------------
+       y_sep = y;
+       if(!m_separator5.Create(m_chart_id, m_name+"Sep5", m_subwin, 10, y_sep, 420, y_sep+1)) return false;
+       if(!m_separator5.ColorBackground(C'60,60,60')) return false;
+       if(!Add(m_separator5)) return false;
+
+       y += 10;
+       // Monthly History (2 Months)
+       for(int i=0; i<2; i++)
+       {
+           if(!CreateLabel(m_lbl_mon_date[i], "Month", "MDate"+(string)i, 10, y, 90, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_per[i],  "0.00",  "MPer"+(string)i,   90, y, 270, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_val[i],  "0.00",  "MVal"+(string)i,   145, y, 270, y+20)) return false;
+           y += 20;
+       }
+
+       y += 10;
+       // -- Separator -----------------------------
+       y_sep = y;
+       if(!m_separator6.Create(m_chart_id, m_name+"Sep6", m_subwin, 10, y_sep, 420, y_sep+1)) return false;
+       if(!m_separator6.ColorBackground(C'60,60,60')) return false;
+       if(!Add(m_separator6)) return false;
+
+       y += 10;
+       // Yearly History (Current Year)
+       if(!CreateLabel(m_lbl_year_date, "Year", "YDate", 10, y, 90, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_per,  "0.00", "YPer",  90, y, 270, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_val,  "0.00", "YVal",  145, y, 270, y+20)) return false;
+
        return true;
    }
    
@@ -225,10 +255,6 @@ public:
    void UpdateHistory()
    {
       double running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-      
-
-      
-      // --- End Weekly Profit ---
 
       // Loop from Today (0) backwards to 7 days ago
       for(int i=0; i<7; i++)
@@ -236,38 +262,68 @@ public:
          datetime t_start = iTime(_Symbol, PERIOD_D1, i);
          datetime t_end   = (i==0) ? TimeCurrent() : iTime(_Symbol, PERIOD_D1, i-1);
          
-         // 1. Select History
-         HistorySelect(t_start, t_end);
-         int deals = HistoryDealsTotal();
-         
          double day_profit = 0;
          double day_deposit = 0; // Net Deposits/Withdrawals
          double day_lot = 0;
-         double day_rebate = 0;
+         double day_rebate = 0; // Keeping variable for consistency, though unused in logic below
          
-         for(int j=0; j<deals; j++)
+         // GENERIC CACHING LOGIC
+         string date_str = TimeToString(t_start, TIME_DATE);
+         string key_p = "GH_D_" + date_str + "_P"; // Profit
+         string key_d = "GH_D_" + date_str + "_D"; // Deposit
+         string key_l = "GH_D_" + date_str + "_L"; // Lot
+
+         bool loaded_from_cache = false;
+
+         // If Past Day (i > 0), try to load from Cache
+         if(i > 0)
          {
-            ulong ticket = HistoryDealGetTicket(j);
-            double l = HistoryDealGetDouble(ticket, DEAL_VOLUME);
-            double p = HistoryDealGetDouble(ticket, DEAL_PROFIT);
-            double s = HistoryDealGetDouble(ticket, DEAL_SWAP);
-            double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
-            long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+            if(GlobalVariableCheck(key_p) && GlobalVariableCheck(key_d) && GlobalVariableCheck(key_l))
+            {
+               day_profit  = GlobalVariableGet(key_p);
+               day_deposit = GlobalVariableGet(key_d);
+               day_lot     = GlobalVariableGet(key_l);
+               loaded_from_cache = true;
+            }
+         }
+         
+         // If Not Loaded (Current Day OR Cache Miss), Calculate
+         if(!loaded_from_cache)
+         {
+            if(HistorySelect(t_start, t_end))
+            {
+               int deals = HistoryDealsTotal();
+               for(int j=0; j<deals; j++)
+               {
+                  ulong ticket = HistoryDealGetTicket(j);
+                  double l = HistoryDealGetDouble(ticket, DEAL_VOLUME);
+                  double p = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+                  double s = HistoryDealGetDouble(ticket, DEAL_SWAP);
+                  double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+                  long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+                  
+                  if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+                  {
+                     day_profit += (p + s + c);
+                     day_lot += l;
+                  }
+                  else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
+                  {
+                     day_deposit += p; 
+                  }
+                  else
+                  {
+                     day_profit += (p + s + c);
+                  }
+               }
+            }
             
-            // Check Deal Type
-            if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+            // Save to Cache ONLY if Past Day
+            if(i > 0)
             {
-               day_profit += (p + s + c);
-               day_lot += l;
-            }
-            else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
-            {
-               day_deposit += p; 
-            }
-            else
-            {
-               // Other types (Charges, Corrections, etc) treated as profit/loss component
-               day_profit += (p + s + c);
+               GlobalVariableSet(key_p, day_profit);
+               GlobalVariableSet(key_d, day_deposit);
+               GlobalVariableSet(key_l, day_lot);
             }
          }
          
@@ -301,10 +357,8 @@ public:
          
          if(day_profit > 0) 
          {
-
             m_lbl_hist_per[i].Color(clrLime);
             m_lbl_hist_val[i].Color(clrLime);
-            
          }
          else if(day_profit < 0)
          {
@@ -329,23 +383,54 @@ public:
          datetime w_start = iTime(_Symbol, PERIOD_W1, i);
          datetime w_end   = (i==0) ? TimeCurrent() : iTime(_Symbol, PERIOD_W1, i-1);
          
-         HistorySelect(w_start, w_end);
-         int w_deals = HistoryDealsTotal();
          double w_profit = 0;
          double w_deposit = 0;
+
+         // GENERIC CACHING LOGIC (WEEKLY)
+         string date_str = TimeToString(w_start, TIME_DATE);
+         string key_p = "GH_W_" + date_str + "_P"; // Profit
+         string key_d = "GH_W_" + date_str + "_D"; // Deposit
          
-         for(int k=0; k<w_deals; k++)
+         bool w_loaded = false;
+
+         // If Past Week (i > 0), try Check Cache
+         if(i > 0)
          {
-            ulong ticket = HistoryDealGetTicket(k);
-            double p = HistoryDealGetDouble(ticket, DEAL_PROFIT);
-            double s = HistoryDealGetDouble(ticket, DEAL_SWAP);
-            double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
-            long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
-            
-            if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
-               w_profit += (p + s + c);
-            else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
-               w_deposit += p;
+            if(GlobalVariableCheck(key_p) && GlobalVariableCheck(key_d))
+            {
+               w_profit  = GlobalVariableGet(key_p);
+               w_deposit = GlobalVariableGet(key_d);
+               w_loaded = true;
+            }
+         }
+
+         // If Not Loaded, Calculate
+         if(!w_loaded)
+         {
+            if(HistorySelect(w_start, w_end))
+            {
+               int w_deals = HistoryDealsTotal();
+               for(int k=0; k<w_deals; k++)
+               {
+                  ulong ticket = HistoryDealGetTicket(k);
+                  double p = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+                  double s = HistoryDealGetDouble(ticket, DEAL_SWAP);
+                  double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+                  long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+                  
+                  if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+                     w_profit += (p + s + c);
+                  else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
+                     w_deposit += p;
+               }
+            }
+
+            // Save to Cache ONLY if Past Week
+            if(i > 0)
+            {
+               GlobalVariableSet(key_p, w_profit);
+               GlobalVariableSet(key_d, w_deposit);
+            }
          }
          
          // Calculate Weekly Percent
@@ -377,6 +462,134 @@ public:
          // Prepare for next iteration (previous week)
          w_running_balance = w_start_balance;
       }
+      
+      // --- Monthly History (2 Months) ---
+      double m_running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      
+      for(int i=0; i<2; i++)
+      {
+         datetime m_start = iTime(_Symbol, PERIOD_MN1, i);
+         datetime m_end   = (i==0) ? TimeCurrent() : iTime(_Symbol, PERIOD_MN1, i-1);
+         
+         double m_profit = 0;
+         double m_deposit = 0;
+
+         // GENERIC CACHING LOGIC (MONTHLY)
+         string date_str = TimeToString(m_start, TIME_DATE);
+         string key_p = "GH_M_" + date_str + "_P"; // Profit
+         string key_d = "GH_M_" + date_str + "_D"; // Deposit
+         
+         bool m_loaded = false;
+
+         // If Past Month (i > 0), try Check Cache
+         if(i > 0)
+         {
+            if(GlobalVariableCheck(key_p) && GlobalVariableCheck(key_d))
+            {
+               m_profit  = GlobalVariableGet(key_p);
+               m_deposit = GlobalVariableGet(key_d);
+               m_loaded = true;
+            }
+         }
+
+         if(!m_loaded)
+         {
+            if(HistorySelect(m_start, m_end))
+            {
+               int m_deals = HistoryDealsTotal();
+               for(int k=0; k<m_deals; k++)
+               {
+                  ulong ticket = HistoryDealGetTicket(k);
+                  double p = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+                  double s = HistoryDealGetDouble(ticket, DEAL_SWAP);
+                  double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+                  long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+                  
+                  if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+                     m_profit += (p + s + c);
+                  else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
+                     m_deposit += p;
+               }
+            }
+            
+            // Save to Cache ONLY if Past Month
+            if(i > 0)
+            {
+               GlobalVariableSet(key_p, m_profit);
+               GlobalVariableSet(key_d, m_deposit);
+            }
+         }
+         
+         double m_start_balance = m_running_balance - (m_profit + m_deposit);
+         double m_base = m_start_balance;
+         if(m_base <= 0.1) m_base += m_deposit;
+         
+         double m_percent = 0;
+         if(m_base > 0) m_percent = (m_profit / m_base) * 100.0;
+         
+         m_lbl_mon_date[i].Text(TimeToString(m_start, TIME_DATE));
+         m_lbl_mon_date[i].Color(C'180,180,180');
+         
+         m_lbl_mon_val[i].Text(FormatNumber(m_profit));
+         string m_perText = "(" + DoubleToString(m_percent, 2) + "%)";
+         m_lbl_mon_per[i].Text(m_perText);
+         
+         if(m_profit >= 0) { m_lbl_mon_val[i].Color(clrLime); m_lbl_mon_per[i].Color(clrLime); }
+         else { m_lbl_mon_val[i].Color(clrRed); m_lbl_mon_per[i].Color(clrRed); }
+         
+         m_running_balance = m_start_balance;
+      }
+      
+      // --- Yearly History (Current Year) ---
+      // Determine Start of Year
+      MqlDateTime dt;
+      TimeCurrent(dt);
+      dt.mon = 1; dt.day = 1; dt.hour = 0; dt.min = 0; dt.sec = 0;
+      datetime y_start = StructToTime(dt);
+      datetime y_end = TimeCurrent();
+      
+      // Real-time Calculation only (Current Year)
+      double y_profit = 0;
+      double y_deposit = 0;
+      
+      if(HistorySelect(y_start, y_end))
+      {
+          int y_deals = HistoryDealsTotal();
+          for(int k=0; k<y_deals; k++)
+          {
+             ulong ticket = HistoryDealGetTicket(k);
+             double p = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+             double s = HistoryDealGetDouble(ticket, DEAL_SWAP);
+             double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+             long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+             
+             if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+                y_profit += (p + s + c);
+             else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
+                y_deposit += p;
+          }
+      }
+      
+      // Percent logic requires Start of Year Balance
+      // Since we don't track full year backward loop here, we approximate base by calculating backwards form current balance
+      // CurrentBalance = StartYearBalance + Profit + Deposit -> StartYearBalance = CurrentBalance - Profit - Deposit
+      double cur_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      double y_start_balance = cur_balance - (y_profit + y_deposit);
+      
+      double y_base = y_start_balance;
+      if(y_base <= 0.1) y_base += y_deposit;
+      
+      double y_percent = 0;
+      if(y_base > 0) y_percent = (y_profit / y_base) * 100.0;
+      
+      m_lbl_year_date.Text(TimeToString(y_start, TIME_DATE)); 
+      m_lbl_year_date.Color(C'180,180,180');
+      
+      m_lbl_year_val.Text(FormatNumber(y_profit));
+      m_lbl_year_per.Text("(" + DoubleToString(y_percent, 2) + "%)");
+      
+      if(y_profit >= 0) { m_lbl_year_val.Color(clrLime); m_lbl_year_per.Color(clrLime); }
+      else { m_lbl_year_val.Color(clrRed); m_lbl_year_per.Color(clrRed); }
    }
 
    // Helper: Format number with commas
@@ -525,6 +738,19 @@ public:
          m_lbl_week_per[i].ColorBackground(C'30,30,30');
          m_lbl_week_val[i].ColorBackground(C'30,30,30');
       }
+      
+      // Monthly Style
+      for(int i=0; i<2; i++)
+      {
+         m_lbl_mon_date[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_per[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_val[i].ColorBackground(C'30,30,30');
+      }
+      
+      // Yearly Style
+      m_lbl_year_date.ColorBackground(C'30,30,30');
+      m_lbl_year_per.ColorBackground(C'30,30,30');
+      m_lbl_year_val.ColorBackground(C'30,30,30');
    }
    void StyleLabel(CLabel &lbl, color clr)
    {
@@ -569,6 +795,18 @@ private:
 
    CLabel m_lbl_week_per[4];
    CLabel m_lbl_week_val[4];
+
+   // Monthly History Labels
+   CLabel m_lbl_mon_date[2];
+   CLabel m_lbl_mon_per[2];
+   CLabel m_lbl_mon_val[2];
+
+   // Yearly History Labels
+   CLabel m_lbl_year_date;
+   CLabel m_lbl_year_per;
+   CLabel m_lbl_year_val;
+   
+   CPanel m_separator5, m_separator6;
    
 protected:
    ulong m_last_click_time;
@@ -607,7 +845,7 @@ int OnInit()
    int startX = CurrentStateMinimized ? PanelMinX : PanelX;
    int startY = CurrentStateMinimized ? PanelMinY : PanelY;
 
-   // 5. Create Panel (Increased Height for Weekly History 4 rows)
+   // 5. Create Panel (Increased Height for Monthly/Yearly)
    if(!AppWindow.Create(0,"Golden Hour",0,startX,startY,startX+430,startY+680))
       return(INIT_FAILED);
       
