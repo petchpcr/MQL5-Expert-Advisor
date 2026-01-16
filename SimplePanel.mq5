@@ -175,9 +175,20 @@ public:
       if(!Add(m_separator4)) return false;
 
 
+      
 
-
-      return true;
+       y += 10;
+       // Weekly History (4 Weeks)
+       // Weekly History (4 Weeks)
+       for(int i=0; i<4; i++)
+       {
+           if(!CreateLabel(m_lbl_week_date[i], "Week", "WDate"+(string)i, 10, y, 90, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_per[i],  "0.00", "WPer"+(string)i,   90, y, 270, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_val[i],  "0.00", "WVal"+(string)i,   145, y, 270, y+20)) return false;
+           y += 20;
+       }
+ 
+       return true;
    }
    
    // Helper to create a single label
@@ -215,6 +226,10 @@ public:
    {
       double running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
       
+
+      
+      // --- End Weekly Profit ---
+
       // Loop from Today (0) backwards to 7 days ago
       for(int i=0; i<7; i++)
       {
@@ -286,6 +301,7 @@ public:
          
          if(day_profit > 0) 
          {
+
             m_lbl_hist_per[i].Color(clrLime);
             m_lbl_hist_val[i].Color(clrLime);
             
@@ -303,6 +319,63 @@ public:
 
          // 5. Prepare balance for next iteration (yesterday)
          running_balance = start_balance;
+      }
+      
+      double w_running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      
+      // Update Weekly History (4 Weeks)
+      for(int i=0; i<4; i++)
+      {
+         datetime w_start = iTime(_Symbol, PERIOD_W1, i);
+         datetime w_end   = (i==0) ? TimeCurrent() : iTime(_Symbol, PERIOD_W1, i-1);
+         
+         HistorySelect(w_start, w_end);
+         int w_deals = HistoryDealsTotal();
+         double w_profit = 0;
+         double w_deposit = 0;
+         
+         for(int k=0; k<w_deals; k++)
+         {
+            ulong ticket = HistoryDealGetTicket(k);
+            double p = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+            double s = HistoryDealGetDouble(ticket, DEAL_SWAP);
+            double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+            long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+            
+            if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+               w_profit += (p + s + c);
+            else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
+               w_deposit += p;
+         }
+         
+         // Calculate Weekly Percent
+         double w_start_balance = w_running_balance - (w_profit + w_deposit);
+         double w_base = w_start_balance;
+         if(w_base <= 0.1) w_base += w_deposit;
+         
+         double w_percent = 0;
+         if(w_base > 0) w_percent = (w_profit / w_base) * 100.0;
+         
+         m_lbl_week_date[i].Text(TimeToString(w_start, TIME_DATE));
+         m_lbl_week_date[i].Color(C'180,180,180');
+         
+         m_lbl_week_val[i].Text(FormatNumber(w_profit));
+         string w_perText = "(" + DoubleToString(w_percent, 2) + "%)";
+         m_lbl_week_per[i].Text(w_perText);
+         
+         if(w_profit >= 0) 
+         {
+            m_lbl_week_val[i].Color(clrLime);
+            m_lbl_week_per[i].Color(clrLime);
+         }
+         else 
+         {
+            m_lbl_week_val[i].Color(clrRed);
+            m_lbl_week_per[i].Color(clrRed);
+         }
+         
+         // Prepare for next iteration (previous week)
+         w_running_balance = w_start_balance;
       }
    }
 
@@ -420,6 +493,9 @@ public:
       StyleLabel(m_lbl_prof_sell_key, gray);
       StyleLabel(m_lbl_prof_sell_val, clrWhite);
       
+      StyleLabel(m_lbl_prof_sell_key, gray);
+      StyleLabel(m_lbl_prof_sell_val, clrWhite);
+      
       StyleLabel(m_lbl_cur_dd_key, gray);
       StyleLabel(m_lbl_cur_dd_val, C'255, 204, 204');
       StyleLabel(m_lbl_cur_dd_per, C'255, 204, 204');
@@ -441,8 +517,15 @@ public:
          m_lbl_hist_rebate[i].ColorBackground(C'30,30,30');
          // Color handled dynamically
       }
+      
+      // Weekly History Style
+      for(int i=0; i<4; i++)
+      {
+         m_lbl_week_date[i].ColorBackground(C'30,30,30');
+         m_lbl_week_per[i].ColorBackground(C'30,30,30');
+         m_lbl_week_val[i].ColorBackground(C'30,30,30');
+      }
    }
-   
    void StyleLabel(CLabel &lbl, color clr)
    {
       lbl.ColorBackground(C'30,30,30');
@@ -481,6 +564,12 @@ private:
    CLabel m_lbl_hist_lot[7];
    CLabel m_lbl_hist_rebate[7];
    
+   // Weekly History Labels
+   CLabel m_lbl_week_date[4];
+
+   CLabel m_lbl_week_per[4];
+   CLabel m_lbl_week_val[4];
+   
 protected:
    ulong m_last_click_time;
    
@@ -518,8 +607,8 @@ int OnInit()
    int startX = CurrentStateMinimized ? PanelMinX : PanelX;
    int startY = CurrentStateMinimized ? PanelMinY : PanelY;
 
-   // 5. Create Panel (Increased Height for Summary)
-   if(!AppWindow.Create(0,"Golden Hour",0,startX,startY,startX+430,startY+580))
+   // 5. Create Panel (Increased Height for Weekly History 4 rows)
+   if(!AppWindow.Create(0,"Golden Hour",0,startX,startY,startX+430,startY+680))
       return(INIT_FAILED);
       
    AppWindow.Run();
