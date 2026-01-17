@@ -257,6 +257,41 @@ public:
        return true;
    }
    
+   // Helper: Get Time for D1/W1/MN1 (Calendar Based)
+   datetime GetTime(ENUM_TIMEFRAMES tf, int index)
+   {
+      datetime current = TimeCurrent();
+      MqlDateTime dt;
+      TimeToStruct(current, dt);
+      
+      if(tf == PERIOD_D1)
+      {
+         datetime today_midnight = current - (current % 86400); 
+         return today_midnight - (index * 86400); 
+      }
+      else if(tf == PERIOD_W1)
+      {
+         datetime today_midnight = current - (current % 86400);
+         int days_since_sun = dt.day_of_week; // 0=Sun
+         datetime week_start = today_midnight - (days_since_sun * 86400);
+         return week_start - (index * 7 * 86400);
+      }
+      else if(tf == PERIOD_MN1)
+      {
+         dt.day = 1; dt.hour = 0; dt.min = 0; dt.sec = 0;
+         
+         // Current Month Start
+         int months_total = dt.year * 12 + (dt.mon - 1);
+         months_total -= index;
+         
+         dt.year = months_total / 12;
+         dt.mon = (months_total % 12) + 1;
+         
+         return StructToTime(dt);
+      }
+      return 0;
+   }
+
    // Helper to create a single label
    bool CreateLabel(CLabel &lbl, string text, string name, int x1, int y1, int x2, int y2)
    {
@@ -281,8 +316,9 @@ public:
       m_lbl_profit_val.Text(FormatNumber(profit));
       
       // Color Profit
-      if(profit >= 0) m_lbl_profit_val.Color(clrGain);
-      else m_lbl_profit_val.Color(clrLoss);
+      if(profit > 0) m_lbl_profit_val.Color(clrGain);
+      else if(profit < 0) m_lbl_profit_val.Color(clrLoss);
+      else m_lbl_profit_val.Color(clrWhite);
       
       // Update History
       UpdateHistory();
@@ -344,7 +380,7 @@ public:
       // 1. Daily History (7 Days)
       for(int i=0; i<7; i++)
       {
-         datetime t_d = iTime(_Symbol, PERIOD_D1, i);
+         datetime t_d = GetTime(PERIOD_D1, i);
          double d_p = 0, d_d = 0, d_l = 0;
          
          if(i==0) // Today
@@ -391,7 +427,7 @@ public:
       running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
       for(int i=0; i<4; i++)
       {
-         datetime t_w = iTime(_Symbol, PERIOD_W1, i);
+         datetime t_w = GetTime(PERIOD_W1, i);
          double w_p = 0, w_d = 0, w_l = 0;
          
          if(i==0) // This Week
@@ -440,7 +476,7 @@ public:
       running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
       for(int i=0; i<2; i++)
       {
-         datetime t_m = iTime(_Symbol, PERIOD_MN1, i);
+         datetime t_m = GetTime(PERIOD_MN1, i);
          double m_p = 0, m_d = 0, m_l = 0;
          
          if(i==0) // This Month
@@ -525,7 +561,7 @@ public:
    void CleanupCachedHistory()
    {
       // 1. Daily: Delete 8th day (Index 7)
-      datetime t_d = iTime(_Symbol, PERIOD_D1, 7);
+      datetime t_d = GetTime(PERIOD_D1, 7);
       if(t_d > 0)
       {
          string date_str = TimeToString(t_d, TIME_DATE);
@@ -535,7 +571,7 @@ public:
       }
       
       // 2. Weekly: Delete 5th week (Index 4)
-      datetime t_w = iTime(_Symbol, PERIOD_W1, 4);
+      datetime t_w = GetTime(PERIOD_W1, 4);
       if(t_w > 0)
       {
          string date_str = TimeToString(t_w, TIME_DATE);
@@ -545,7 +581,7 @@ public:
       }
       
       // 3. Monthly: Delete 3rd month (Index 2)
-      datetime t_m = iTime(_Symbol, PERIOD_MN1, 2);
+      datetime t_m = GetTime(PERIOD_MN1, 2);
       if(t_m > 0)
       {
          string date_str = TimeToString(t_m, TIME_DATE);
@@ -568,13 +604,13 @@ public:
 
       // 1. Determine Start Dates for all requirements
       // Daily: Need past 6 days (Index 1-6)
-      datetime t_d_start = iTime(_Symbol, PERIOD_D1, 6);
+      datetime t_d_start = GetTime(PERIOD_D1, 6);
       
       // Weekly: Need past 3 weeks (Index 1-3) + Current Week Partial (Index 0)
-      datetime t_w_start = iTime(_Symbol, PERIOD_W1, 3);
+      datetime t_w_start = GetTime(PERIOD_W1, 3);
       
       // Monthly: Need past 1 month (Index 1) + Current Month Partial (Index 0)
-      datetime t_m_start = iTime(_Symbol, PERIOD_MN1, 1);
+      datetime t_m_start = GetTime(PERIOD_MN1, 1);
       
       // Yearly: Current Year Partial
       dt.mon = 1; dt.day = 1; dt.hour = 0; dt.min = 0; dt.sec = 0;
@@ -597,15 +633,15 @@ public:
 
       // Pre-calculate Time Ranges for checking
       datetime d_times[8]; 
-      for(int i=0; i<7; i++) d_times[i] = iTime(_Symbol, PERIOD_D1, i);
+      for(int i=0; i<7; i++) d_times[i] = GetTime(PERIOD_D1, i);
       d_times[7] = 0; 
       
       datetime w_times[5]; 
-      for(int i=0; i<4; i++) w_times[i] = iTime(_Symbol, PERIOD_W1, i);
+      for(int i=0; i<4; i++) w_times[i] = GetTime(PERIOD_W1, i);
       w_times[4] = 0;
 
       datetime m_times[3];
-      for(int i=0; i<2; i++) m_times[i] = iTime(_Symbol, PERIOD_MN1, i);
+      for(int i=0; i<2; i++) m_times[i] = GetTime(PERIOD_MN1, i);
       m_times[2] = 0;
       
       // Iterate Deals
@@ -826,9 +862,6 @@ public:
 
       StyleLabel(m_lbl_prof_buy_key, gray);
       StyleLabel(m_lbl_prof_buy_val, clrWhite);
-      StyleLabel(m_lbl_prof_sell_key, gray);
-      StyleLabel(m_lbl_prof_sell_val, clrWhite);
-      
       StyleLabel(m_lbl_prof_sell_key, gray);
       StyleLabel(m_lbl_prof_sell_val, clrWhite);
       
