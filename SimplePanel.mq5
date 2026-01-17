@@ -207,6 +207,8 @@ public:
            if(!CreateLabel(m_lbl_week_date[i], "Week", "WDate"+(string)i, x_h_col1, y, x_h_col1+50, y+20)) return false;
            if(!CreateLabel(m_lbl_week_per[i],  "0.00", "WPer"+(string)i, x_h_col2, y, x_h_col2+50, y+20)) return false;
            if(!CreateLabel(m_lbl_week_val[i],  "0.00", "WVal"+(string)i, x_h_col3, y, x_h_col3+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_lot[i],  "0.00", "WLot"+(string)i, x_h_col4, y, x_h_col4+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_rebate[i],"0.00", "WReb"+(string)i, x_h_col5, y, x_h_col5+50, y+20)) return false;
            y += 20;
        }
  
@@ -225,6 +227,8 @@ public:
            if(!CreateLabel(m_lbl_mon_date[i], "Month", "MDate"+(string)i, x_h_col1, y, x_h_col1+50, y+20)) return false;
            if(!CreateLabel(m_lbl_mon_per[i],  "0.00",  "MPer"+(string)i, x_h_col2, y, x_h_col2+50, y+20)) return false;
            if(!CreateLabel(m_lbl_mon_val[i],  "0.00",  "MVal"+(string)i, x_h_col3, y, x_h_col3+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_lot[i],  "0.00",  "MLot"+(string)i, x_h_col4, y, x_h_col4+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_rebate[i],"0.00", "MReb"+(string)i, x_h_col5, y, x_h_col5+50, y+20)) return false;
            y += 20;
        }
 
@@ -241,6 +245,8 @@ public:
        if(!CreateLabel(m_lbl_year_date, "Year", "YDate", x_h_col1, y, x_h_col1+50, y+20)) return false;
        if(!CreateLabel(m_lbl_year_per,  "0.00", "YPer", x_h_col2, y, x_h_col2+50, y+20)) return false;
        if(!CreateLabel(m_lbl_year_val,  "0.00", "YVal", x_h_col3, y, x_h_col3+50, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_lot,  "0.00", "YLot", x_h_col4, y, x_h_col4+50, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_rebate, "0.00", "YReb", x_h_col5, y, x_h_col5+50, y+20)) return false;
 
        return true;
    }
@@ -375,7 +381,7 @@ public:
       for(int i=0; i<4; i++)
       {
          datetime t_w = iTime(_Symbol, PERIOD_W1, i);
-         double w_p = 0, w_d = 0;
+         double w_p = 0, w_d = 0, w_l = 0;
          
          if(i==0) // This Week
          {
@@ -383,8 +389,9 @@ public:
              if(GlobalVariableCheck("GH_PARTIAL_W_P")) {
                  w_p = GlobalVariableGet("GH_PARTIAL_W_P") + t_prof; // Add Today's
                  w_d = GlobalVariableGet("GH_PARTIAL_W_D") + t_dep;
+                 w_l = GlobalVariableGet("GH_PARTIAL_W_L") + t_lot;
              } else {
-                 w_p = t_prof; w_d = t_dep;
+                 w_p = t_prof; w_d = t_dep; w_l = t_lot;
              }
          }
          else // Past Weeks
@@ -393,6 +400,7 @@ public:
              if(GlobalVariableCheck("GH_W_" + date_str + "_P")) {
                  w_p = GlobalVariableGet("GH_W_" + date_str + "_P");
                  w_d = GlobalVariableGet("GH_W_" + date_str + "_D");
+                 w_l = GlobalVariableGet("GH_W_" + date_str + "_L");
              }
          }
          
@@ -407,6 +415,8 @@ public:
          m_lbl_week_date[i].Color(clrBase);
          m_lbl_week_val[i].Text(FormatNumber(w_p));
          m_lbl_week_per[i].Text("(" + DoubleToString(per, 2) + "%)");
+         m_lbl_week_lot[i].Text(FormatNumber(w_l));
+         m_lbl_week_rebate[i].Text(FormatNumber(w_l));
          
          if(w_p > 0) { m_lbl_week_val[i].Color(clrGain); m_lbl_week_per[i].Color(clrGain); }
          else if(w_p < 0) { m_lbl_week_val[i].Color(clrLoss); m_lbl_week_per[i].Color(clrLoss); }
@@ -420,15 +430,16 @@ public:
       for(int i=0; i<2; i++)
       {
          datetime t_m = iTime(_Symbol, PERIOD_MN1, i);
-         double m_p = 0, m_d = 0;
+         double m_p = 0, m_d = 0, m_l = 0;
          
          if(i==0) // This Month
          {
              if(GlobalVariableCheck("GH_PARTIAL_M_P")) {
                  m_p = GlobalVariableGet("GH_PARTIAL_M_P") + t_prof;
                  m_d = GlobalVariableGet("GH_PARTIAL_M_D") + t_dep;
+                 m_l = GlobalVariableGet("GH_PARTIAL_M_L") + t_lot;
              } else {
-                 m_p = t_prof; m_d = t_dep;
+                 m_p = t_prof; m_d = t_dep; m_l = t_lot;
              }
          }
          else // Past Month
@@ -437,6 +448,7 @@ public:
              if(GlobalVariableCheck("GH_M_" + date_str + "_P")) {
                  m_p = GlobalVariableGet("GH_M_" + date_str + "_P");
                  m_d = GlobalVariableGet("GH_M_" + date_str + "_D");
+                 m_l = GlobalVariableGet("GH_M_" + date_str + "_L");
              }
          }
          
@@ -451,7 +463,9 @@ public:
          m_lbl_mon_date[i].Color(clrBase);
          m_lbl_mon_val[i].Text(FormatNumber(m_p));
          m_lbl_mon_per[i].Text("(" + DoubleToString(per, 2) + "%)");
-         
+         m_lbl_mon_lot[i].Text(FormatNumber(m_l));
+         m_lbl_mon_rebate[i].Text(FormatNumber(m_l));
+
          if(m_p > 0) { m_lbl_mon_val[i].Color(clrGain); m_lbl_mon_per[i].Color(clrGain); }
          else if(m_p < 0) { m_lbl_mon_val[i].Color(clrLoss); m_lbl_mon_per[i].Color(clrLoss); }
          else { m_lbl_mon_val[i].Color(clrBase); m_lbl_mon_per[i].Color(clrBase); }
@@ -461,13 +475,14 @@ public:
       
       // 4. Yearly History (Current Only)
       running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
-      double y_p = 0, y_d = 0;
+      double y_p = 0, y_d = 0, y_l = 0;
       
       if(GlobalVariableCheck("GH_PARTIAL_Y_P")) {
           y_p = GlobalVariableGet("GH_PARTIAL_Y_P") + t_prof;
           y_d = GlobalVariableGet("GH_PARTIAL_Y_D") + t_dep;
+          y_l = GlobalVariableGet("GH_PARTIAL_Y_L") + t_lot;
       } else {
-          y_p = t_prof; y_d = t_dep;
+          y_p = t_prof; y_d = t_dep; y_l = t_lot;
       }
       
       double y_start_bal = running_balance - (y_p + y_d);
@@ -484,6 +499,8 @@ public:
       m_lbl_year_date.Color(clrBase);
       m_lbl_year_val.Text(FormatNumber(y_p));
       m_lbl_year_per.Text("(" + DoubleToString(y_per, 2) + "%)");
+      m_lbl_year_lot.Text(FormatNumber(y_l));
+      m_lbl_year_rebate.Text(FormatNumber(y_l));
       
       if(y_p > 0) { m_lbl_year_val.Color(clrGain); m_lbl_year_per.Color(clrGain); }
       else if(y_p < 0) { m_lbl_year_val.Color(clrLoss); m_lbl_year_per.Color(clrLoss); }
@@ -513,6 +530,7 @@ public:
          string date_str = TimeToString(t_w, TIME_DATE);
          GlobalVariableDel("GH_W_" + date_str + "_P");
          GlobalVariableDel("GH_W_" + date_str + "_D");
+         GlobalVariableDel("GH_W_" + date_str + "_L");
       }
       
       // 3. Monthly: Delete 3rd month (Index 2)
@@ -522,6 +540,7 @@ public:
          string date_str = TimeToString(t_m, TIME_DATE);
          GlobalVariableDel("GH_M_" + date_str + "_P");
          GlobalVariableDel("GH_M_" + date_str + "_D");
+         GlobalVariableDel("GH_M_" + date_str + "_L");
       }
    }
    
@@ -561,9 +580,9 @@ public:
       
       // 3. Initialize Accumulators
       double d_prof[7], d_dep[7], d_lot[7]; ArrayInitialize(d_prof,0); ArrayInitialize(d_dep,0); ArrayInitialize(d_lot,0);
-      double w_prof[4], w_dep[4]; ArrayInitialize(w_prof,0); ArrayInitialize(w_dep,0);
-      double m_prof[2], m_dep[2]; ArrayInitialize(m_prof,0); ArrayInitialize(m_dep,0);
-      double y_prof = 0, y_dep = 0;
+      double w_prof[4], w_dep[4], w_lot[4]; ArrayInitialize(w_prof,0); ArrayInitialize(w_dep,0); ArrayInitialize(w_lot,0);
+      double m_prof[2], m_dep[2], m_lot[2]; ArrayInitialize(m_prof,0); ArrayInitialize(m_dep,0); ArrayInitialize(m_lot,0);
+      double y_prof = 0, y_dep = 0, y_lot = 0;
 
       // Pre-calculate Time Ranges for checking
       datetime d_times[8]; 
@@ -621,7 +640,7 @@ public:
          for(int k=0; k<4; k++) {
              datetime next_bound = (k==0) ? today_midnight : w_times[k-1]; 
              if(deal_time >= w_times[k] && deal_time < next_bound) {
-                 w_prof[k] += net_profit; w_dep[k] += net_deposit; break;
+                 w_prof[k] += net_profit; w_dep[k] += net_deposit; w_lot[k] += net_lot; break;
              }
          }
          
@@ -629,13 +648,13 @@ public:
          for(int k=0; k<2; k++) {
              datetime next_bound = (k==0) ? today_midnight : m_times[k-1];
              if(deal_time >= m_times[k] && deal_time < next_bound) {
-                 m_prof[k] += net_profit; m_dep[k] += net_deposit; break;
+                 m_prof[k] += net_profit; m_dep[k] += net_deposit; m_lot[k] += net_lot; break;
              }
          }
          
          // Bucket: Yearly (Current Year)
          if(deal_time >= t_y_start && deal_time < today_midnight) {
-             y_prof += net_profit; y_dep += net_deposit;
+             y_prof += net_profit; y_dep += net_deposit; y_lot += net_lot;
          }
       }
       
@@ -653,6 +672,7 @@ public:
           string date_str = TimeToString(w_times[k], TIME_DATE);
           GlobalVariableSet("GH_W_" + date_str + "_P", w_prof[k]);
           GlobalVariableSet("GH_W_" + date_str + "_D", w_dep[k]);
+          GlobalVariableSet("GH_W_" + date_str + "_L", w_lot[k]);
       }
       // Weekly 0 (Partial)
       GlobalVariableSet("GH_PARTIAL_W_P", w_prof[0]); // Profit
@@ -663,6 +683,7 @@ public:
           string date_str = TimeToString(m_times[k], TIME_DATE);
           GlobalVariableSet("GH_M_" + date_str + "_P", m_prof[k]);
           GlobalVariableSet("GH_M_" + date_str + "_D", m_dep[k]);
+          GlobalVariableSet("GH_M_" + date_str + "_L", m_lot[k]);
       }
       // Monthly 0 (Partial)
       GlobalVariableSet("GH_PARTIAL_M_P", m_prof[0]); 
@@ -891,19 +912,24 @@ private:
    
    // Weekly History Labels
    CLabel m_lbl_week_date[4];
-
    CLabel m_lbl_week_per[4];
    CLabel m_lbl_week_val[4];
+   CLabel m_lbl_week_lot[4];
+   CLabel m_lbl_week_rebate[4];
 
    // Monthly History Labels
    CLabel m_lbl_mon_date[2];
    CLabel m_lbl_mon_per[2];
    CLabel m_lbl_mon_val[2];
+   CLabel m_lbl_mon_lot[2];
+   CLabel m_lbl_mon_rebate[2];
 
    // Yearly History Labels
    CLabel m_lbl_year_date;
    CLabel m_lbl_year_per;
    CLabel m_lbl_year_val;
+   CLabel m_lbl_year_lot;
+   CLabel m_lbl_year_rebate;
 
    CPanel m_separator,m_separator2,m_separator3,m_separator4,m_separator5,m_separator6,m_separator7;
    
