@@ -448,16 +448,9 @@ public:
          string w_perText = "(" + DoubleToString(w_percent, 2) + "%)";
          m_lbl_week_per[i].Text(w_perText);
          
-         if(w_profit >= 0) 
-         {
-            m_lbl_week_val[i].Color(clrLime);
-            m_lbl_week_per[i].Color(clrLime);
-         }
-         else 
-         {
-            m_lbl_week_val[i].Color(clrRed);
-            m_lbl_week_per[i].Color(clrRed);
-         }
+         if(w_profit > 0) { m_lbl_week_val[i].Color(clrLime); m_lbl_week_per[i].Color(clrLime); }
+         else if(w_profit < 0) { m_lbl_week_val[i].Color(clrRed); m_lbl_week_per[i].Color(clrRed); }
+         else { m_lbl_week_val[i].Color(C'180,180,180'); m_lbl_week_per[i].Color(C'180,180,180'); }
          
          // Prepare for next iteration (previous week)
          w_running_balance = w_start_balance;
@@ -534,8 +527,9 @@ public:
          string m_perText = "(" + DoubleToString(m_percent, 2) + "%)";
          m_lbl_mon_per[i].Text(m_perText);
          
-         if(m_profit >= 0) { m_lbl_mon_val[i].Color(clrLime); m_lbl_mon_per[i].Color(clrLime); }
-         else { m_lbl_mon_val[i].Color(clrRed); m_lbl_mon_per[i].Color(clrRed); }
+         if(m_profit > 0) { m_lbl_mon_val[i].Color(clrLime); m_lbl_mon_per[i].Color(clrLime); }
+         else if(m_profit < 0) { m_lbl_mon_val[i].Color(clrRed); m_lbl_mon_per[i].Color(clrRed); }
+         else { m_lbl_mon_val[i].Color(C'180,180,180'); m_lbl_mon_per[i].Color(C'180,180,180'); }
          
          m_running_balance = m_start_balance;
       }
@@ -588,8 +582,44 @@ public:
       m_lbl_year_val.Text(FormatNumber(y_profit));
       m_lbl_year_per.Text("(" + DoubleToString(y_percent, 2) + "%)");
       
-      if(y_profit >= 0) { m_lbl_year_val.Color(clrLime); m_lbl_year_per.Color(clrLime); }
-      else { m_lbl_year_val.Color(clrRed); m_lbl_year_per.Color(clrRed); }
+      if(y_profit > 0) { m_lbl_year_val.Color(clrLime); m_lbl_year_per.Color(clrLime); }
+      else if(y_profit < 0) { m_lbl_year_val.Color(clrRed); m_lbl_year_per.Color(clrRed); }
+      else { m_lbl_year_val.Color(C'180,180,180'); m_lbl_year_per.Color(C'180,180,180'); }
+      
+      // Cleanup old cache
+      CleanupCachedHistory();
+   }
+
+   // Cleanup old cache data that is no longer displayed
+   void CleanupCachedHistory()
+   {
+      // 1. Daily: Delete 8th day (Index 7)
+      datetime t_d = iTime(_Symbol, PERIOD_D1, 7);
+      if(t_d > 0)
+      {
+         string date_str = TimeToString(t_d, TIME_DATE);
+         GlobalVariableDel("GH_D_" + date_str + "_P");
+         GlobalVariableDel("GH_D_" + date_str + "_D");
+         GlobalVariableDel("GH_D_" + date_str + "_L");
+      }
+      
+      // 2. Weekly: Delete 5th week (Index 4)
+      datetime t_w = iTime(_Symbol, PERIOD_W1, 4);
+      if(t_w > 0)
+      {
+         string date_str = TimeToString(t_w, TIME_DATE);
+         GlobalVariableDel("GH_W_" + date_str + "_P");
+         GlobalVariableDel("GH_W_" + date_str + "_D");
+      }
+      
+      // 3. Monthly: Delete 3rd month (Index 2)
+      datetime t_m = iTime(_Symbol, PERIOD_MN1, 2);
+      if(t_m > 0)
+      {
+         string date_str = TimeToString(t_m, TIME_DATE);
+         GlobalVariableDel("GH_M_" + date_str + "_P");
+         GlobalVariableDel("GH_M_" + date_str + "_D");
+      }
    }
 
    // Helper: Format number with commas
@@ -735,6 +765,8 @@ public:
       for(int i=0; i<4; i++)
       {
          m_lbl_week_date[i].ColorBackground(C'30,30,30');
+         m_lbl_week_date[i].Color(C'180,180,180');
+
          m_lbl_week_per[i].ColorBackground(C'30,30,30');
          m_lbl_week_val[i].ColorBackground(C'30,30,30');
       }
@@ -743,12 +775,15 @@ public:
       for(int i=0; i<2; i++)
       {
          m_lbl_mon_date[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_date[i].Color(C'180,180,180');
+
          m_lbl_mon_per[i].ColorBackground(C'30,30,30');
          m_lbl_mon_val[i].ColorBackground(C'30,30,30');
       }
       
       // Yearly Style
       m_lbl_year_date.ColorBackground(C'30,30,30');
+      m_lbl_year_date.Color(C'180,180,180');
       m_lbl_year_per.ColorBackground(C'30,30,30');
       m_lbl_year_val.ColorBackground(C'30,30,30');
    }
