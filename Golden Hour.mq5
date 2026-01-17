@@ -158,9 +158,12 @@ double Notify_DD_per = 0;
 input int Notify_Orders = 0; // แจ้งเตือนเมื่อจำนวน Order ถึง ...
 
 const input string _____UI_Position_____ = "============ UI Setting ============";
-input Position Button_Position = TOP_RIGHT;    // ตำแหน่งของปุ่ม
-input Position Label_Position = BOTTOM_RIGHT;  // ตำแหน่งของรายละเอียด
-input datetime St_Date = D'2026.01.01 00:00'; // คำนวณสถิติตั้งแต่วันที่
+input int InpPanelX = 1500; // ตำแน่งเริ่มต้นของ UI แนวนอน
+input int InpPanelY = 20;  // ตำแน่งเริ่มต้นของ UI แนวตั้ง
+
+Position Button_Position = TOP_RIGHT;    // ตำแหน่งของปุ่ม
+Position Label_Position = BOTTOM_RIGHT;  // ตำแหน่งของรายละเอียด
+datetime St_Date = D'2026.01.01 00:00'; // คำนวณสถิติตั้งแต่วันที่
 
 // ----- [Casual]
 double first_balance = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -1432,6 +1435,12 @@ int OnInit()
    isBoost = Boost_MODE;
 
    CreateAverageLine();
+
+   // Panel Set Defaults from Inputs
+   PanelX = InpPanelX;
+   PanelY = InpPanelY;
+   PanelMinX = InpPanelX;
+   PanelMinY = InpPanelY;
 
    LoadGlobalPanel();
    CreateLabel();

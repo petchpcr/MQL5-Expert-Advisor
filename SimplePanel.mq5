@@ -12,6 +12,10 @@
 #include <Controls/Button.mqh>
 #include <Controls/Label.mqh>
 
+input int InpPanelX = 1200; // Default Panel X
+input int InpPanelY = 20;  // Default Panel Y
+
+
 // Define custom class to access protected members
 class CSimplePanel : public CAppDialog
 {
@@ -989,6 +993,12 @@ color clrLoss = C'255, 77, 77';
 
 int OnInit()
 {
+   // Set Defaults from Inputs
+   PanelX = InpPanelX;
+   PanelY = InpPanelY;
+   PanelMinX = InpPanelX;
+   PanelMinY = InpPanelY;
+
    // 1. Load Minimized State
    if(GlobalVariableCheck("SimplePanel_IsMinimized")) 
       CurrentStateMinimized = (bool)GlobalVariableGet("SimplePanel_IsMinimized");
