@@ -1655,7 +1655,7 @@ void CreateLabel()
    int startY = CurrentStateMinimized ? PanelMinY : PanelY;
 
    // 5. Create Panel (Increased Height for Monthly/Yearly)
-   if(!AppWindow.Create(0,"Golden Hour",0,startX,startY,startX+380,startY+680))
+   if(!AppWindow.Create(0, EA_Name ,0,startX,startY,startX+380,startY+680))
       return;
       
    AppWindow.Run();
