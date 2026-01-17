@@ -8,11 +8,15 @@
 #property version "1.00"
 #property strict
 
+#include <Controls/Dialog.mqh>
+#include <Controls/Label.mqh>
+
 #define BTN1 "BTN_Auto_Remove"
 #define BTN2 "BTN_CLEAR_NOW"
 
 bool isVIP = true;
 string Comp_Name = "Local FX";
+string Comp_Link = "www.facebook.com/LocalFX4U";
 string EA_Name = "Golden Hour";
 int Slippage = 10;
 
@@ -192,160 +196,1006 @@ double highest_profit = 0;
 
 // ----- [Label]
 // Label Class
-class CLabel
+class CSimplePanel : public CAppDialog
 {
 public:
-   string name;
-   string text;
-   int group, x, y;
-   color clr;
-   int fontSize;
-   string fontName;
-
-   CLabel()
+   // Method to check minimized state
+   bool IsMinimized() { return(m_minimized); }
+   // Method to set minimized state (wrapper for protected Minimize)
+   void SetMinimized(bool min) { if(min) Minimize(); else Maximize(); }
+   
+   // Public method to process caption clicks (called from OnChartEvent)
+   void ProcessCaptionClick()
    {
-      name = "";
-      text = "";
-      x = 0;
-      y = 0;
-      clr = clrWhite;
-      fontSize = 10;
-      fontName = "Arial";
-   }
-
-   bool Create(string _name, string _text, int _group, int _x, int _y)
-   {
-      name = _name;
-      text = _text;
-      group = _group;
-      x = _x;
-      y = _y;
-
-      if (!ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0))
-         return false;
-
-      ObjectSetString(0, name, OBJPROP_TEXT, text);
-      ObjectSetString(0, name, OBJPROP_FONT, fontName);
-      ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
-      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-
-      ObjectSetInteger(0, name, OBJPROP_CORNER, Label_Position);
-      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
-      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
-      ObjectSetString(0, name, OBJPROP_TOOLTIP, "");
-      return true;
-   }
-
-   void SetText(string _text)
-   {
-      text = _text;
-      ObjectSetString(0, name, OBJPROP_TEXT, text);
-   }
-
-   void SetSize(int _size)
-   {
-      fontSize = _size;
-      ObjectSetInteger(0, name, OBJPROP_FONTSIZE, fontSize);
-   }
-
-   void SetColor(color _clr)
-   {
-      clr = _clr;
-      ObjectSetInteger(0, name, OBJPROP_COLOR, clr);
-   }
-
-   void MoveAll(int _x, int _y)
-   {
-      x = _x;
-      y = _y;
-      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
-      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
-   }
-
-   void MoveX(int _x)
-   {
-      x = _x;
-      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
-   }
-
-   void MoveY(int _y)
-   {
-      y = _y;
-      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, y);
-   }
-
-   void Delete()
-   {
-      ObjectDelete(0, name);
-   }
-};
-
-// Manager Class
-class CLabelManager
-{
-private:
-   CLabel *labels[];
-
-public:
-   int Add(string name, string text, int group, int x, int y)
-   {
-      int n = ArraySize(labels);
-      ArrayResize(labels, n + 1);
-
-      labels[n] = new CLabel;
-      labels[n].Create(name, text, group, x, y);
-
-      return n;
-   }
-
-   CLabel *Get(int index)
-   {
-      if (index < 0 || index >= ArraySize(labels))
-         return NULL;
-
-      return labels[index];
-   }
-
-   void Delete(int index)
-   {
-      if (index < 0 || index >= ArraySize(labels))
-         return;
-
-      labels[index].Delete();
-      delete labels[index];
-   }
-
-   void DeleteAll()
-   {
-      for (int i = 0; i < ArraySize(labels); i++)
+      ulong now = GetTickCount();
+      
+      if(now - m_last_click_time < 500) // 500ms threshold for double click
       {
-         labels[i].Delete();
-         delete labels[i];
+         // Toggle State
+         if(IsMinimized()) Maximize();
+         else Minimize();
+         
+         // Reset time to prevent triple-click triggering
+         m_last_click_time = 0;
+      }
+      else
+      {
+         m_last_click_time = now;
+      }
+   }
+   
+   // Create Data Labels (Balance, Equity, Profit)
+   bool CreateDataLabels()
+   {
+      int x1_key = 10, x2_key = 70;
+      int x1_val = 80, x2_val = 200;
+      int y = 10;
+      int step = 25;
+
+      // Band & Page
+      if(!CreateLabel(m_lbl_band, "FB: "+Comp_Name, "BandKey", x1_key, y, x2_key, y+20)) return false;
+      y += step;
+      if(!CreateLabel(m_lbl_page, Comp_Link, "PageKey", x1_key, y, x2_key, y+20)) return false;
+      y = y-20;
+      if(!CreateLabel(m_lbl_status, "", "StatusKey", x1_key+295, y, x2_key, y+20)) return false;
+
+      y = 60; // Reset for Data Section
+
+      // Balance
+      if(!CreateLabel(m_lbl_balance_key, "Balance:", "BalKey", x1_key, y, x2_key, y+20)) return false;
+      if(!CreateLabel(m_lbl_balance_val, "0.00",     "BalVal", x1_val, y, x2_val, y+20)) return false;
+      
+      y += step;
+      // Equity
+      if(!CreateLabel(m_lbl_equity_key, "Equity:",   "EqKey",  x1_key, y, x2_key, y+20)) return false;
+      if(!CreateLabel(m_lbl_equity_val, "0.00",      "EqVal",  x1_val, y, x2_val, y+20)) return false;
+      
+      y -= step;
+      int x_col1 = 220;
+      int w_col1_key = 90; // "Spread:" width
+      
+      if(!CreateLabel(m_lbl_spread_key, "Current Spread:", "SprdKey", x_col1, y, x_col1+w_col1_key, y+20)) return false;
+      if(!CreateLabel(m_lbl_spread_val, "0",    "SprdVal", x_col1+w_col1_key+15, y, x_col1+100, y+20)) return false;
+
+      y += step;
+      if(!CreateLabel(m_lbl_avg_spread_key, "Average Spread:", "AvgSprdKey", x_col1, y, x_col1+w_col1_key, y+20)) return false;
+      if(!CreateLabel(m_lbl_avg_spread_val, "0",        "AvgSprdVal", x_col1+w_col1_key+15, y, 270, y+20)) return false;
+
+      y += step+5;
+      // -- Separator -----------------------------
+      int y_sep = y;
+      if(!m_separator.Create(m_chart_id, m_name+"Sep", m_subwin, 10, y_sep, 370, y_sep+1)) return false;
+      if(!m_separator.ColorBackground(C'60,60,60')) return false;
+      if(!Add(m_separator)) return false;
+
+      y += 5;
+      // Summary Table (3x3)
+      int x_sum_col1 = 10;
+      int x_sum_col2 = 110;
+      int x_sum_col3 = 220;
+      int summary_step = 25;
+
+      // Row 1: Total
+      if(!CreateLabel(m_lbl_ord_total_key, "Total:", "OrdTotKey", x_sum_col1, y, x_sum_col1+90, y+20)) return false;
+      if(!CreateLabel(m_lbl_ord_total_val, "0",       "OrdTotVal", x_sum_col1+45, y, x_sum_col1+90, y+20)) return false;
+      if(!CreateLabel(m_lbl_lot_total_key,   "Lot:",    "LotTotKey", x_sum_col2, y, x_sum_col2+80, y+20)) return false;
+      if(!CreateLabel(m_lbl_lot_total_val,   "0.00",       "LotTotVal", x_sum_col2+30, y, x_sum_col2+80, y+20)) return false;
+      if(!CreateLabel(m_lbl_profit_key,  "Profit:",   "OrdSellKey", x_sum_col3, y, x_sum_col3+70, y+20)) return false;
+      if(!CreateLabel(m_lbl_profit_val,  "0.00",       "OrdSellVal", x_sum_col3+45, y, x_sum_col3+70, y+20)) return false;
+      y += summary_step;
+
+      // Row 2: Long
+      if(!CreateLabel(m_lbl_ord_buy_key, "Long:",   "OrdBuyKey", x_sum_col1, y, x_sum_col1+90, y+20)) return false;
+      if(!CreateLabel(m_lbl_ord_buy_val, "0",          "OrdBuyVal", x_sum_col1+45, y, x_sum_col1+90, y+20)) return false;
+      if(!CreateLabel(m_lbl_lot_buy_key,   "Lot:",       "LotBuyKey", x_sum_col2, y, x_sum_col2+80, y+20)) return false;
+      if(!CreateLabel(m_lbl_lot_buy_val,   "0.00",          "LotBuyVal", x_sum_col2+30, y, x_sum_col2+80, y+20)) return false;
+      if(!CreateLabel(m_lbl_prof_buy_key,  "Profit:",      "ProfBuyKey", x_sum_col3, y, x_sum_col3+70, y+20)) return false;
+      if(!CreateLabel(m_lbl_prof_buy_val,  "0.00",          "ProfBuyVal", x_sum_col3+45, y, x_sum_col3+70, y+20)) return false;
+      y += summary_step;
+
+      // Row 3: Short
+      if(!CreateLabel(m_lbl_ord_sell_key, "Short:", "ProfTotKey", x_sum_col1, y, x_sum_col1+90, y+20)) return false;
+      if(!CreateLabel(m_lbl_ord_sell_val, "0",     "ProfTotVal", x_sum_col1+45, y, x_sum_col1+90, y+20)) return false;
+      if(!CreateLabel(m_lbl_lot_sell_key,   "Lot:",    "LotSellKey", x_sum_col2, y, x_sum_col2+80, y+20)) return false;
+      if(!CreateLabel(m_lbl_lot_sell_val,   "0.00",      "LotSellVal", x_sum_col2+30, y, x_sum_col2+80, y+20)) return false;
+      if(!CreateLabel(m_lbl_prof_sell_key,  "Profit:",   "ProfSellKey", x_sum_col3, y, x_sum_col3+70, y+20)) return false;
+      if(!CreateLabel(m_lbl_prof_sell_val,  "0.00",       "ProfSellVal", x_sum_col3+45, y, x_sum_col3+70, y+20)) return false;
+      y += summary_step;
+      
+      y += 5; // Extra spacing before separator
+      // -- Separator -----------------------------
+      y_sep = y;
+      if(!m_separator2.Create(m_chart_id, m_name+"Sep2", m_subwin, 10, y_sep, 370, y_sep+1)) return false;
+      if(!m_separator2.ColorBackground(C'60,60,60')) return false;
+      if(!Add(m_separator2)) return false;
+
+      int x_dd_col1 = 10;
+      int x_dd_col2 = 90;
+      int x_dd_col3 = 160;
+      int x_dd_col4 = 260;
+      y += 5;
+      // Row 1: Current DD
+      if(!CreateLabel(m_lbl_cur_dd_key, "Current DD:", "CurDDKey", x_dd_col1, y, x_dd_col1+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_cur_dd_per, "(0%)",   "CurDDPer", x_dd_col2, y, x_dd_col2+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_cur_dd_val, "0.00",        "CurDDVal", x_dd_col3, y, x_dd_col3+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_clear_dd, "[Clear Max DD]",        "ClearDD", x_dd_col4, y, x_dd_col3+50, y+20)) return false;
+      y += summary_step-5;
+
+      // Row 2: Max DD
+      if(!CreateLabel(m_lbl_max_dd_key, "Max DD:",    "MaxDDKey", x_dd_col1, y, x_dd_col1+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_max_dd_per, "(0%)",  "MaxDDPer", x_dd_col2, y, x_dd_col2+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_max_dd_val, "0.00",       "MaxDDVal", x_dd_col3, y, x_dd_col3+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_date_dd, "",        "DateDD", x_dd_col4+10, y, x_dd_col3+50, y+20)) return false;
+      y += summary_step;
+
+      y += 5; // Extra spacing before separator
+      // -- Separator -----------------------------
+      y_sep = y;
+      if(!m_separator3.Create(m_chart_id, m_name+"Sep3", m_subwin, 10, y_sep, 370, y_sep+1)) return false;
+      if(!m_separator3.ColorBackground(C'60,60,60')) return false;
+      if(!Add(m_separator3)) return false;
+
+      int x_h_col1 = 10;
+      int x_h_col2 = 95;
+      int x_h_col3 = 160;
+      int x_h_col4 = 250;
+      int x_h_col5 = 310;
+      y += 5; // Header
+      if(!CreateLabel(m_lbl_h_period, "",    "HPeriod", x_h_col1, y, x_h_col1+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_h_gain, "Gain %",      "HGain", x_h_col2, y, x_h_col2+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_h_profit, "Profit $",  "HProfit", x_h_col3, y, x_h_col3+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_h_lot, "Lot",          "HLot", x_h_col4, y, x_h_col4+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_h_rebate, "Rebate",    "HRebate", x_h_col5, y, x_h_col5+50, y+20)) return false;
+
+      y += summary_step; 
+
+      int x_ly_col1 = 10;
+      int x2_ly_col1 = x_ly_col1+50;
+      if(!CreateLabel(m_lbl_h_daily, "Daily (7D)", "HDaily", x_ly_col1, y-10, x2_ly_col1, y+10)) return false;
+
+      // -- Separator -----------------------------
+      y_sep = y;
+      if(!m_separator4.Create(m_chart_id, m_name+"Sep4", m_subwin, x2_ly_col1+10, y_sep, 370, y_sep+1)) return false;
+      if(!m_separator4.ColorBackground(C'60,60,60')) return false;
+      if(!Add(m_separator4)) return false;
+
+      // History List (7 Days)
+      y += 10; // Start History
+      for(int i=0; i<7; i++)
+      {
+          // Date Label
+          if(!CreateLabel(m_lbl_hist_date[i], "Date", "HDate"+(string)i, x_h_col1, y, x_h_col1+50, y+20)) return false;
+          // Percent Label
+          if(!CreateLabel(m_lbl_hist_per[i], "0.00", "HPer"+(string)i, x_h_col2, y, x_h_col2+50, y+20)) return false;
+          // Value Label
+          if(!CreateLabel(m_lbl_hist_val[i], "0.00", "HVal"+(string)i, x_h_col3, y, x_h_col3+50, y+20)) return false;
+          // Lot Label
+          if(!CreateLabel(m_lbl_hist_lot[i], "0.00", "LVal"+(string)i, x_h_col4, y, x_h_col4+50, y+20)) return false;
+          // Rebate Label
+          if(!CreateLabel(m_lbl_hist_rebate[i], "0.00", "RVal"+(string)i, x_h_col5, y, x_h_col5+50, y+20)) return false;
+          y += 20;
       }
 
-      ArrayResize(labels, 0);
+      y += 10;
+      if(!CreateLabel(m_lbl_h_weekly, "Weekly (4W)", "HWeekly", x_ly_col1, y-10, x2_ly_col1, y+10)) return false;
+      // -- Separator -----------------------------
+      y_sep = y;
+      if(!m_separator5.Create(m_chart_id, m_name+"Sep5", m_subwin, x2_ly_col1+30, y_sep, 370, y_sep+1)) return false;
+      if(!m_separator5.ColorBackground(C'60,60,60')) return false;
+      if(!Add(m_separator5)) return false;
+
+       y += 10;
+       // Weekly History (4 Weeks)
+       // Weekly History (4 Weeks)
+       for(int i=0; i<4; i++)
+       {
+           if(!CreateLabel(m_lbl_week_date[i], "Week", "WDate"+(string)i, x_h_col1, y, x_h_col1+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_per[i],  "0.00", "WPer"+(string)i, x_h_col2, y, x_h_col2+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_val[i],  "0.00", "WVal"+(string)i, x_h_col3, y, x_h_col3+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_lot[i],  "0.00", "WLot"+(string)i, x_h_col4, y, x_h_col4+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_rebate[i],"0.00", "WReb"+(string)i, x_h_col5, y, x_h_col5+50, y+20)) return false;
+           y += 20;
+       }
+ 
+       y += 10;
+       if(!CreateLabel(m_lbl_h_monthly, "Monthly (2M)", "HMonthly", x_ly_col1, y-10, x2_ly_col1, y+10)) return false;
+       // -- Separator -----------------------------
+       y_sep = y;
+       if(!m_separator6.Create(m_chart_id, m_name+"Sep6", m_subwin, x2_ly_col1+30, y_sep, 370, y_sep+1)) return false;
+       if(!m_separator6.ColorBackground(C'60,60,60')) return false;
+       if(!Add(m_separator6)) return false;
+
+       y += 10;
+       // Monthly History (2 Months)
+       for(int i=0; i<2; i++)
+       {
+           if(!CreateLabel(m_lbl_mon_date[i], "Month", "MDate"+(string)i, x_h_col1, y, x_h_col1+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_per[i],  "0.00",  "MPer"+(string)i, x_h_col2, y, x_h_col2+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_val[i],  "0.00",  "MVal"+(string)i, x_h_col3, y, x_h_col3+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_lot[i],  "0.00",  "MLot"+(string)i, x_h_col4, y, x_h_col4+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_rebate[i],"0.00", "MReb"+(string)i, x_h_col5, y, x_h_col5+50, y+20)) return false;
+           y += 20;
+       }
+
+       y += 10;
+       if(!CreateLabel(m_lbl_h_yearly, "This Year", "HYearly", x_ly_col1, y-10, x2_ly_col1, y+10)) return false;
+       // -- Separator -----------------------------
+       y_sep = y;
+       if(!m_separator7.Create(m_chart_id, m_name+"Sep7", m_subwin, x2_ly_col1+10, y_sep, 370, y_sep+1)) return false;
+       if(!m_separator7.ColorBackground(C'60,60,60')) return false;
+       if(!Add(m_separator7)) return false;
+
+       y += 10;
+       // Yearly History (Current Year)
+       if(!CreateLabel(m_lbl_year_date, "Year", "YDate", x_h_col1, y, x_h_col1+50, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_per,  "0.00", "YPer", x_h_col2, y, x_h_col2+50, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_val,  "0.00", "YVal", x_h_col3, y, x_h_col3+50, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_lot,  "0.00", "YLot", x_h_col4, y, x_h_col4+50, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_rebate, "0.00", "YReb", x_h_col5, y, x_h_col5+50, y+20)) return false;
+
+       return true;
+   }
+   
+   // Helper to create a single label
+   bool CreateLabel(CLabel &lbl, string text, string name, int x1, int y1, int x2, int y2)
+   {
+      if(!lbl.Create(m_chart_id, m_name+"Lbl"+name, m_subwin, x1, y1, x2, y2)) return false;
+      if(!lbl.Text(text)) return false;
+      if(!Add(lbl)) return false;
+      return true;
+   }
+   
+   void UpdateData()
+   {
+      if(IsMinimized()) return; 
+      
+      // Update Values
+      string txt_status = "";
+      if(isBoost)
+         txt_status = "[BOOST]";
+      if(Safe_Type != "")
+         txt_status = "[SAFE]";
+
+      m_lbl_status.Text(txt_status);
+
+      m_lbl_balance_val.Text(FormatNumber(AccountInfoDouble(ACCOUNT_BALANCE)));
+      m_lbl_balance_val.Color(clrWhite);
+
+      m_lbl_equity_val.Text(FormatNumber(AccountInfoDouble(ACCOUNT_EQUITY)));
+      m_lbl_equity_val.Color(clrWhite);
+      
+      double profit = AccountInfoDouble(ACCOUNT_PROFIT);
+      m_lbl_profit_val.Text(FormatNumber(profit));
+      if(profit >= 0) m_lbl_profit_val.Color(clrGain);
+      else m_lbl_profit_val.Color(clrLoss);
+      
+      m_lbl_spread_val.Text((string)(int)(_spread / _point));
+      m_lbl_avg_spread_val.Text((string)(int)(avg_spread / _point));
+
+      m_lbl_ord_total_val.Text((string)totalOrders);
+      m_lbl_lot_total_val.Text((string)TotalLot);
+
+      m_lbl_ord_buy_val.Text((string)countBuy);
+      m_lbl_lot_buy_val.Text((string)sumLotBuy);
+      m_lbl_prof_buy_val.Text(FormatNumber(currentBuyProfit));
+
+      m_lbl_ord_sell_val.Text((string)countSell);
+      m_lbl_lot_sell_val.Text((string)sumLotSell);
+      m_lbl_prof_sell_val.Text(FormatNumber(currentSellProfit));
+
+      m_lbl_cur_dd_val.Text((string)curDrawDown);
+      m_lbl_cur_dd_per.Text("(" + FormatNumber(curDD_Per) + "%)");
+
+      string txtMaxDD_date = maxDD_Date == 0 ? "" : TimeToString(maxDD_Date, TIME_DATE);
+      m_lbl_max_dd_val.Text(FormatNumber(maxDrawDown));
+      m_lbl_max_dd_per.Text("(" + FormatNumber(maxDD_Per) + "%)");
+      m_lbl_date_dd.Text(txtMaxDD_date);
+
+      // Update History
+      UpdateHistory();
+   }
+   
+   void UpdateHistory()
+   {
+      datetime current = TimeCurrent();
+      datetime today_midnight = current - (current % 86400); // 00:00:00 Today
+
+      // --- LOOP 1: Check Triggers for Big Loop ---
+      // Trigger if never run (m_last_calc_date == 0) OR if new day arrived
+      if(m_last_calc_date < today_midnight)
+      {
+         UpdateHistoricalCache();
+         m_last_calc_date = today_midnight;
+      }
+      
+      // --- LOOP 2: Realtime Data (Today ONLY) ---
+      double t_prof = 0, t_dep = 0, t_lot = 0;
+      
+      if(HistorySelect(today_midnight, current))
+      {
+         int deals = HistoryDealsTotal();
+         for(int i=0; i<deals; i++)
+         {
+            ulong ticket = HistoryDealGetTicket(i);
+            double p = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+            double s = HistoryDealGetDouble(ticket, DEAL_SWAP);
+            double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+            double v = HistoryDealGetDouble(ticket, DEAL_VOLUME);
+            long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+            long deal_entry = HistoryDealGetInteger(ticket, DEAL_ENTRY);
+            
+            if(deal_entry == DEAL_ENTRY_IN)
+            {
+               t_lot += v;
+            }
+            
+            if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+            {
+               t_prof += (p + s + c);
+            }
+            else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
+            {
+               t_dep += p; 
+            }
+            else
+            {
+               t_prof += (p + s + c);
+            }
+         }
+      }
+      
+      // --- Aggregation & Display ---
+      
+      double running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+
+      // 1. Daily History (7 Days)
+      for(int i=0; i<7; i++)
+      {
+         datetime t_d = iTime(_Symbol, PERIOD_D1, i);
+         double d_p = 0, d_d = 0, d_l = 0;
+         
+         if(i==0) // Today
+         {
+             d_p = t_prof; d_d = t_dep; d_l = t_lot;
+         }
+         else // History
+         {
+             string date_str = TimeToString(t_d, TIME_DATE);
+             if(GlobalVariableCheck(EncodeAZ("ghd") + date_str + "_P")) {
+                 d_p = GlobalVariableGet(EncodeAZ("ghd") + date_str + "_P");
+                 d_d = GlobalVariableGet(EncodeAZ("ghd") + date_str + "_D");
+                 d_l = GlobalVariableGet(EncodeAZ("ghd") + date_str + "_L");
+             }
+         }
+         
+         // Calculate Percent (Backwards Balance Logic)
+         // Balance at End of Day = running_balance
+         // Balance at Start of Day = running_balance - (Profit + Deposit)
+         double start_bal = running_balance - (d_p + d_d);
+         double base = start_bal;
+         if(base <= 0.1) base += d_d; // If started empty, use deposit base
+         
+         double per = 0;
+         if(base > 0) per = (d_p / base) * 100.0;
+         
+         // Update Labels
+         m_lbl_hist_date[i].Text(TimeToString(t_d, TIME_DATE));
+         m_lbl_hist_date[i].Color(clrBase);
+
+         m_lbl_hist_val[i].Text(FormatNumber(d_p));
+         m_lbl_hist_per[i].Text("(" + DoubleToString(per, 2) + "%)");
+         m_lbl_hist_lot[i].Text(FormatNumber(d_l));
+         m_lbl_hist_rebate[i].Text(FormatNumber(d_l * _rebate)); // Rebate logic same as lot for now
+         
+         if(d_p > 0) { m_lbl_hist_val[i].Color(clrGain); m_lbl_hist_per[i].Color(clrGain); }
+         else if(d_p < 0) { m_lbl_hist_val[i].Color(clrLoss); m_lbl_hist_per[i].Color(clrLoss); }
+         else { m_lbl_hist_val[i].Color(clrBase); m_lbl_hist_per[i].Color(clrBase); }
+         
+         running_balance = start_bal; // Step back for next iteration
+      }
+      
+      // 2. Weekly History
+      running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      for(int i=0; i<4; i++)
+      {
+         datetime t_w = iTime(_Symbol, PERIOD_W1, i);
+         double w_p = 0, w_d = 0, w_l = 0;
+         
+         if(i==0) // This Week
+         {
+             // Partial + Realtime
+             if(GlobalVariableCheck(EncodeAZ("ghptwp"))) {
+                 w_p = GlobalVariableGet(EncodeAZ("ghptwp")) + t_prof; // Add Today's
+                 w_d = GlobalVariableGet(EncodeAZ("ghptwd")) + t_dep;
+                 w_l = GlobalVariableGet(EncodeAZ("ghptwl")) + t_lot;
+             } else {
+                 w_p = t_prof; w_d = t_dep; w_l = t_lot;
+             }
+         }
+         else // Past Weeks
+         {
+             string date_str = TimeToString(t_w, TIME_DATE);
+             if(GlobalVariableCheck(EncodeAZ("ghw") + date_str + "_P")) {
+                 w_p = GlobalVariableGet(EncodeAZ("ghw") + date_str + "_P");
+                 w_d = GlobalVariableGet(EncodeAZ("ghw") + date_str + "_D");
+                 w_l = GlobalVariableGet(EncodeAZ("ghw") + date_str + "_L");
+             }
+         }
+         
+         double start_bal = running_balance - (w_p + w_d);
+         double base = start_bal;
+         if(base <= 0.1) base += w_d;
+         
+         double per = 0;
+         if(base > 0) per = (w_p / base) * 100.0;
+         
+         m_lbl_week_date[i].Text(TimeToString(t_w, TIME_DATE));
+         m_lbl_week_date[i].Color(clrBase);
+         m_lbl_week_val[i].Text(FormatNumber(w_p));
+         m_lbl_week_per[i].Text("(" + DoubleToString(per, 2) + "%)");
+         m_lbl_week_lot[i].Text(FormatNumber(w_l));
+         m_lbl_week_rebate[i].Text(FormatNumber(w_l * _rebate));
+         
+         if(w_p > 0) { m_lbl_week_val[i].Color(clrGain); m_lbl_week_per[i].Color(clrGain); }
+         else if(w_p < 0) { m_lbl_week_val[i].Color(clrLoss); m_lbl_week_per[i].Color(clrLoss); }
+         else { m_lbl_week_val[i].Color(clrBase); m_lbl_week_per[i].Color(clrBase); }
+         
+         running_balance = start_bal;
+      }
+      
+      // 3. Monthly History
+      running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      for(int i=0; i<2; i++)
+      {
+         datetime t_m = iTime(_Symbol, PERIOD_MN1, i);
+         double m_p = 0, m_d = 0, m_l = 0;
+         
+         if(i==0) // This Month
+         {
+             if(GlobalVariableCheck(EncodeAZ("ghptmp"))) {
+                 m_p = GlobalVariableGet(EncodeAZ("ghptmp")) + t_prof;
+                 m_d = GlobalVariableGet(EncodeAZ("ghptmd")) + t_dep;
+                 m_l = GlobalVariableGet(EncodeAZ("ghptml")) + t_lot;
+             } else {
+                 m_p = t_prof; m_d = t_dep; m_l = t_lot;
+             }
+         }
+         else // Past Month
+         {
+             string date_str = TimeToString(t_m, TIME_DATE);
+             if(GlobalVariableCheck(EncodeAZ("ghm") + date_str + "_P")) {
+                 m_p = GlobalVariableGet(EncodeAZ("ghm") + date_str + "_P");
+                 m_d = GlobalVariableGet(EncodeAZ("ghm") + date_str + "_D");
+                 m_l = GlobalVariableGet(EncodeAZ("ghm") + date_str + "_L");
+             }
+         }
+         
+         double start_bal = running_balance - (m_p + m_d);
+         double base = start_bal;
+         if(base <= 0.1) base += m_d;
+         
+         double per = 0;
+         if(base > 0) per = (m_p / base) * 100.0;
+         
+         m_lbl_mon_date[i].Text(TimeToString(t_m, TIME_DATE));
+         m_lbl_mon_date[i].Color(clrBase);
+         m_lbl_mon_val[i].Text(FormatNumber(m_p));
+         m_lbl_mon_per[i].Text("(" + DoubleToString(per, 2) + "%)");
+         m_lbl_mon_lot[i].Text(FormatNumber(m_l));
+         m_lbl_mon_rebate[i].Text(FormatNumber(m_l * _rebate));
+
+         if(m_p > 0) { m_lbl_mon_val[i].Color(clrGain); m_lbl_mon_per[i].Color(clrGain); }
+         else if(m_p < 0) { m_lbl_mon_val[i].Color(clrLoss); m_lbl_mon_per[i].Color(clrLoss); }
+         else { m_lbl_mon_val[i].Color(clrBase); m_lbl_mon_per[i].Color(clrBase); }
+         
+         running_balance = start_bal;
+      }
+      
+      // 4. Yearly History (Current Only)
+      running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+      double y_p = 0, y_d = 0, y_l = 0;
+      
+      if(GlobalVariableCheck(EncodeAZ("ghptyp"))) {
+          y_p = GlobalVariableGet(EncodeAZ("ghptyp")) + t_prof;
+          y_d = GlobalVariableGet(EncodeAZ("ghptyd")) + t_dep;
+          y_d = GlobalVariableGet(EncodeAZ("ghptyl")) + t_dep;
+      } else {
+          y_p = t_prof; y_d = t_dep; y_l = t_lot;
+      }
+      
+      double y_start_bal = running_balance - (y_p + y_d);
+      double y_base = y_start_bal;
+      if(y_base <= 0.1) y_base += y_d;
+         
+      double y_per = 0;
+      if(y_base > 0) y_per = (y_p / y_base) * 100.0;
+      
+      MqlDateTime dt_y; TimeCurrent(dt_y);
+      dt_y.mon=1; dt_y.day=1; dt_y.hour=0; dt_y.min=0; dt_y.sec=0; // Start of Year
+      
+      m_lbl_year_date.Text(TimeToString(StructToTime(dt_y), TIME_DATE));
+      m_lbl_year_date.Color(clrBase);
+      m_lbl_year_val.Text(FormatNumber(y_p));
+      m_lbl_year_per.Text("(" + DoubleToString(y_per, 2) + "%)");
+      m_lbl_year_lot.Text(FormatNumber(y_l));
+      m_lbl_year_rebate.Text(FormatNumber(y_l * _rebate));
+      
+      if(y_p > 0) { m_lbl_year_val.Color(clrGain); m_lbl_year_per.Color(clrGain); }
+      else if(y_p < 0) { m_lbl_year_val.Color(clrLoss); m_lbl_year_per.Color(clrLoss); }
+      else { m_lbl_year_val.Color(clrBase); m_lbl_year_per.Color(clrBase); }
+      
+      // Cleanup old cache
+      CleanupCachedHistory();
+   }
+   
+   // Cleanup old cache data that is no longer displayed
+   void CleanupCachedHistory()
+   {
+      // 1. Daily: Delete 8th day (Index 7)
+      datetime t_d = iTime(_Symbol, PERIOD_D1, 7);
+      if(t_d > 0)
+      {
+         string date_str = TimeToString(t_d, TIME_DATE);
+         GlobalVariableDel(EncodeAZ("ghd") + date_str + "_P");
+         GlobalVariableDel(EncodeAZ("ghd") + date_str + "_D");
+         GlobalVariableDel(EncodeAZ("ghd") + date_str + "_L");
+      }
+      
+      // 2. Weekly: Delete 5th week (Index 4)
+      datetime t_w = iTime(_Symbol, PERIOD_W1, 4);
+      if(t_w > 0)
+      {
+         string date_str = TimeToString(t_w, TIME_DATE);
+         GlobalVariableDel(EncodeAZ("ghw") + date_str + "_P");
+         GlobalVariableDel(EncodeAZ("ghw") + date_str + "_D");
+         GlobalVariableDel(EncodeAZ("ghw") + date_str + "_L");
+      }
+      
+      // 3. Monthly: Delete 3rd month (Index 2)
+      datetime t_m = iTime(_Symbol, PERIOD_MN1, 2);
+      if(t_m > 0)
+      {
+         string date_str = TimeToString(t_m, TIME_DATE);
+         GlobalVariableDel(EncodeAZ("ghm") + date_str + "_P");
+         GlobalVariableDel(EncodeAZ("ghm") + date_str + "_D");
+         GlobalVariableDel(EncodeAZ("ghm") + date_str + "_L");
+      }
    }
 
-   int Count()
+   // Big Loop: Calculate and Cache History up to Yesterday
+   void UpdateHistoricalCache()
    {
-      return ArraySize(labels);
+      datetime current = TimeCurrent();
+      MqlDateTime dt;
+      TimeToStruct(current, dt);
+      
+      // End of Yesterday (23:59:59 of previous day)
+      datetime today_midnight = current - (current % 86400);
+      datetime time_end = today_midnight - 1; 
+
+      // 1. Determine Start Dates for all requirements
+      // Daily: Need past 6 days (Index 1-6)
+      datetime t_d_start = iTime(_Symbol, PERIOD_D1, 6);
+      
+      // Weekly: Need past 3 weeks (Index 1-3) + Current Week Partial (Index 0)
+      datetime t_w_start = iTime(_Symbol, PERIOD_W1, 3);
+      
+      // Monthly: Need past 1 month (Index 1) + Current Month Partial (Index 0)
+      datetime t_m_start = iTime(_Symbol, PERIOD_MN1, 1);
+      
+      // Yearly: Current Year Partial
+      dt.mon = 1; dt.day = 1; dt.hour = 0; dt.min = 0; dt.sec = 0;
+      datetime t_y_start = StructToTime(dt);
+      
+      // Find minimum start date
+      datetime time_start = t_d_start;
+      if(t_w_start < time_start) time_start = t_w_start;
+      if(t_m_start < time_start) time_start = t_m_start;
+      if(t_y_start < time_start) time_start = t_y_start;
+
+      // 2. Select History
+      if(!HistorySelect(time_start, time_end)) return;
+      
+      // 3. Initialize Accumulators
+      double d_prof[7], d_dep[7], d_lot[7]; ArrayInitialize(d_prof,0); ArrayInitialize(d_dep,0); ArrayInitialize(d_lot,0);
+      double w_prof[4], w_dep[4], w_lot[4]; ArrayInitialize(w_prof,0); ArrayInitialize(w_dep,0); ArrayInitialize(w_lot,0);
+      double m_prof[2], m_dep[2], m_lot[2]; ArrayInitialize(m_prof,0); ArrayInitialize(m_dep,0); ArrayInitialize(m_lot,0);
+      double y_prof = 0, y_dep = 0, y_lot = 0;
+
+      // Pre-calculate Time Ranges for checking
+      datetime d_times[8]; 
+      for(int i=0; i<7; i++) d_times[i] = iTime(_Symbol, PERIOD_D1, i);
+      d_times[7] = 0; 
+      
+      datetime w_times[5]; 
+      for(int i=0; i<4; i++) w_times[i] = iTime(_Symbol, PERIOD_W1, i);
+      w_times[4] = 0;
+
+      datetime m_times[3];
+      for(int i=0; i<2; i++) m_times[i] = iTime(_Symbol, PERIOD_MN1, i);
+      m_times[2] = 0;
+      
+      // Iterate Deals
+      int deals = HistoryDealsTotal();
+      for(int i=0; i<deals; i++)
+      {
+         ulong ticket = HistoryDealGetTicket(i);
+         datetime deal_time = (datetime)HistoryDealGetInteger(ticket, DEAL_TIME);
+         
+         double p = HistoryDealGetDouble(ticket, DEAL_PROFIT);
+         double s = HistoryDealGetDouble(ticket, DEAL_SWAP);
+         double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+         double v = HistoryDealGetDouble(ticket, DEAL_VOLUME);
+         long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+         long deal_entry = HistoryDealGetInteger(ticket, DEAL_ENTRY);
+         
+         double net_profit = 0;
+         double net_deposit = 0;
+         double net_lot = 0;
+         
+         if(deal_entry == DEAL_ENTRY_IN)
+         {
+            net_lot = v;
+         }
+
+         if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+         {
+            net_profit = p + s + c;
+         }
+         else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
+         {
+            net_deposit = p;
+         }
+         else
+         {
+            net_profit = p + s + c;
+         }
+
+         // Bucket: Daily (1..6)
+         for(int k=1; k<7; k++) {
+             if(deal_time >= d_times[k] && deal_time < d_times[k-1]) {
+                 d_prof[k] += net_profit; d_dep[k] += net_deposit; d_lot[k] += net_lot; break;
+             }
+         }
+         
+         // Bucket: Weekly (0..3)
+         // Week 0 here means "This Week up to Yesterday"
+         for(int k=0; k<4; k++) {
+             datetime next_bound = (k==0) ? today_midnight : w_times[k-1]; 
+             if(deal_time >= w_times[k] && deal_time < next_bound) {
+                 w_prof[k] += net_profit; w_dep[k] += net_deposit; w_lot[k] += net_lot; break;
+             }
+         }
+         
+         // Bucket: Monthly (0..1)
+         for(int k=0; k<2; k++) {
+             datetime next_bound = (k==0) ? today_midnight : m_times[k-1];
+             if(deal_time >= m_times[k] && deal_time < next_bound) {
+                 m_prof[k] += net_profit; m_dep[k] += net_deposit; m_lot[k] += net_lot; break;
+             }
+         }
+         
+         // Bucket: Yearly (Current Year)
+         if(deal_time >= t_y_start && deal_time < today_midnight) {
+             y_prof += net_profit; y_dep += net_deposit;
+         }
+      }
+      
+      // 4. Save to Global Variables
+      // Daily 1-6
+      for(int k=1; k<7; k++) {
+          string date_str = TimeToString(d_times[k], TIME_DATE);
+          GlobalVariableSet(EncodeAZ("ghd") + date_str + "_P", d_prof[k]);
+          GlobalVariableSet(EncodeAZ("ghd") + date_str + "_D", d_dep[k]);
+          GlobalVariableSet(EncodeAZ("ghd") + date_str + "_L", d_lot[k]);
+      }
+      
+      // Weekly 1-3
+      for(int k=1; k<4; k++) {
+          string date_str = TimeToString(w_times[k], TIME_DATE);
+          GlobalVariableSet(EncodeAZ("ghw") + date_str + "_P", w_prof[k]);
+          GlobalVariableSet(EncodeAZ("ghw") + date_str + "_D", w_dep[k]);
+          GlobalVariableSet(EncodeAZ("ghw") + date_str + "_L", w_lot[k]);
+      }
+      // Weekly 0 (Partial)
+      GlobalVariableSet(EncodeAZ("ghptwp"), w_prof[0]); // Profit
+      GlobalVariableSet(EncodeAZ("ghptwd"), w_dep[0]); // Deposit
+      GlobalVariableSet(EncodeAZ("ghptwl"), w_lot[0]); // Lot (Volume)
+      
+      // Monthly 1
+      for(int k=1; k<2; k++) {
+          string date_str = TimeToString(m_times[k], TIME_DATE);
+          GlobalVariableSet(EncodeAZ("ghm") + date_str + "_P", m_prof[k]);
+          GlobalVariableSet(EncodeAZ("ghm") + date_str + "_D", m_dep[k]);
+          GlobalVariableSet(EncodeAZ("ghm") + date_str + "_L", m_lot[k]);
+      }
+      // Monthly 0 (Partial)
+      GlobalVariableSet(EncodeAZ("ghptmp"), m_prof[0]); 
+      GlobalVariableSet(EncodeAZ("ghptmd"), m_dep[0]); 
+      GlobalVariableSet(EncodeAZ("ghptml"), m_lot[0]);
+      
+      // Yearly (Partial)
+      GlobalVariableSet(EncodeAZ("ghptyp"), y_prof); 
+      GlobalVariableSet(EncodeAZ("ghptyd"), y_dep); 
+      GlobalVariableSet(EncodeAZ("ghptyl"), y_lot);
    }
+
+   // Helper: Format number with commas
+   string FormatNumber(double val)
+   {
+      string v = DoubleToString(MathAbs(val), 2);
+      string integ = StringSubstr(v, 0, StringLen(v)-3);
+      string fract = StringSubstr(v, StringLen(v)-3);
+      
+      string res = "";
+      int len = StringLen(integ);
+      
+      for(int i=0; i<len; i++)
+      {
+         if(i > 0 && (len-i)%3 == 0) res += ",";
+         res += StringSubstr(integ, i, 1);
+      }
+      
+      if(val < 0) res = "-" + res;
+      return(res + fract);
+   }
+
+   // Apply Dark Theme Colors
+   void ApplyDarkTheme()
+   {
+      int total = ControlsTotal();
+      for(int i=0; i<total; i++)
+      {
+         CWnd* control = Control(i);
+         if(control == NULL) continue;
+         
+         string name = control.Name();
+         
+         // Client Area
+         if(StringFind(name, "Client") >= 0)
+         {
+            CWndClient* client = (CWndClient*)control;
+            client.ColorBackground(C'30,30,30');
+            client.ColorBorder(C'30,30,30');
+         }
+         // Background
+         else if(StringFind(name, "Back") >= 0)
+         {
+             CPanel* panel = (CPanel*)control;
+             panel.ColorBackground(C'30,30,30');
+             panel.ColorBorder(C'60,60,60');
+         }
+         // Caption
+         else if(StringFind(name, "Caption") >= 0)
+         {
+             CEdit* caption = (CEdit*)control;
+             caption.ColorBackground(C'45,45,48');
+             caption.ColorBorder(C'60,60,60');
+             caption.Color(clrWhite); // Text Color
+             caption.Font("Arial Bold"); // Bold Text for Caption
+         }
+         // Border (if exists)
+         else if(StringFind(name, "Border") >= 0)
+         {
+             CPanel* border = (CPanel*)control;
+             border.ColorBackground(C'30,30,30');
+             border.ColorBorder(C'60,60,60');
+         }
+          // Generic Labels (Apply Segoe UI globally)
+          else if(StringFind(name, "Lbl") >= 0)
+          {
+              CLabel* lbl = (CLabel*)control;
+              lbl.Font("Segoe UI");
+          }
+      }
+      
+      color gray = C'128,128,128';
+      // Data Labels Style
+      StyleLabel(m_lbl_band, C'102, 140, 255');
+      m_lbl_band.Font("Segoe UI Bold");
+      m_lbl_band.FontSize(15);
+      
+      StyleLabel(m_lbl_page, C'179, 198, 255');
+      m_lbl_page.Font("Segoe UI Bold");
+      m_lbl_page.FontSize(11);
+
+      StyleLabel(m_lbl_status, C'255, 191, 128');
+
+      StyleLabel(m_lbl_balance_key, gray);
+      StyleLabel(m_lbl_balance_val, clrWhite);
+      
+      StyleLabel(m_lbl_equity_key, gray);
+      StyleLabel(m_lbl_equity_val, clrWhite);
+      
+      StyleLabel(m_lbl_profit_key, gray);
+      // Profit Value Color is handled dynamically in UpdateData
+      
+      StyleLabel(m_lbl_spread_key, gray);
+      StyleLabel(m_lbl_spread_val, clrWhite);
+
+      StyleLabel(m_lbl_avg_spread_key, gray);
+      StyleLabel(m_lbl_avg_spread_val, clrWhite);
+
+      // Summary Style
+      StyleLabel(m_lbl_ord_total_key, gray);
+      StyleLabel(m_lbl_ord_total_val, clrWhite);
+      StyleLabel(m_lbl_ord_buy_key, gray);
+      StyleLabel(m_lbl_ord_buy_val, clrWhite);
+      StyleLabel(m_lbl_ord_sell_key, gray);
+      StyleLabel(m_lbl_ord_sell_val, clrWhite);
+
+      StyleLabel(m_lbl_lot_total_key, gray);
+      StyleLabel(m_lbl_lot_total_val, clrWhite);
+      StyleLabel(m_lbl_lot_buy_key, gray);
+      StyleLabel(m_lbl_lot_buy_val, clrWhite);
+      StyleLabel(m_lbl_lot_sell_key, gray);
+      StyleLabel(m_lbl_lot_sell_val, clrWhite);
+
+      StyleLabel(m_lbl_prof_buy_key, gray);
+      StyleLabel(m_lbl_prof_buy_val, clrWhite);
+      StyleLabel(m_lbl_prof_sell_key, gray);
+      StyleLabel(m_lbl_prof_sell_val, clrWhite);
+      
+      StyleLabel(m_lbl_prof_sell_key, gray);
+      StyleLabel(m_lbl_prof_sell_val, clrWhite);
+      
+      StyleLabel(m_lbl_cur_dd_key, gray);
+      StyleLabel(m_lbl_cur_dd_val, C'255, 204, 204');
+      StyleLabel(m_lbl_cur_dd_per, C'255, 204, 204');
+      StyleLabel(m_lbl_clear_dd, clrWhite);
+      StyleLabel(m_lbl_max_dd_key, gray);
+      StyleLabel(m_lbl_max_dd_val, C'255, 128, 128');
+      StyleLabel(m_lbl_max_dd_per, C'255, 128, 128');
+      StyleLabel(m_lbl_date_dd, clrBase);
+
+      StyleLabel(m_lbl_h_period, gray);
+      StyleLabel(m_lbl_h_gain, gray);
+      StyleLabel(m_lbl_h_profit, gray);
+      StyleLabel(m_lbl_h_lot, gray);
+      StyleLabel(m_lbl_h_rebate, gray);
+
+      StyleLabel(m_lbl_h_daily, C'128, 170, 255');
+      StyleLabel(m_lbl_h_weekly, C'128, 170, 255');
+      StyleLabel(m_lbl_h_monthly, C'128, 170, 255');
+      StyleLabel(m_lbl_h_yearly, C'128, 170, 255');
+
+      // History Style
+      for(int i=0; i<7; i++)
+      {
+         m_lbl_hist_date[i].ColorBackground(C'30,30,30');
+         m_lbl_hist_date[i].Color(clrBase);
+         
+         m_lbl_hist_per[i].ColorBackground(C'30,30,30');
+         m_lbl_hist_val[i].ColorBackground(C'30,30,30');
+         m_lbl_hist_lot[i].ColorBackground(C'30,30,30');
+         m_lbl_hist_lot[i].Color(clrBase);
+         m_lbl_hist_rebate[i].ColorBackground(C'30,30,30');
+         m_lbl_hist_rebate[i].Color(clrBase);
+         // Color handled dynamically
+      }
+      
+      // Weekly History Style
+      for(int i=0; i<4; i++)
+      {
+         m_lbl_week_date[i].ColorBackground(C'30,30,30');
+         m_lbl_week_date[i].Color(clrBase);
+
+         m_lbl_week_per[i].ColorBackground(C'30,30,30');
+         m_lbl_week_val[i].ColorBackground(C'30,30,30');
+         m_lbl_week_lot[i].ColorBackground(C'30,30,30');
+         m_lbl_week_lot[i].Color(clrBase);
+         m_lbl_week_rebate[i].ColorBackground(C'30,30,30');
+         m_lbl_week_rebate[i].Color(clrBase);
+      }
+      
+      // Monthly Style
+      for(int i=0; i<2; i++)
+      {
+         m_lbl_mon_date[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_date[i].Color(clrBase);
+
+         m_lbl_mon_per[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_val[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_lot[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_lot[i].Color(clrBase);
+         m_lbl_mon_rebate[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_rebate[i].Color(clrBase);
+      }
+      
+      // Yearly Style
+      m_lbl_year_date.ColorBackground(C'30,30,30');
+      m_lbl_year_date.Color(clrBase);
+      m_lbl_year_per.ColorBackground(C'30,30,30');
+      m_lbl_year_val.ColorBackground(C'30,30,30');
+      m_lbl_year_lot.ColorBackground(C'30,30,30');
+      m_lbl_year_lot.Color(clrBase);
+      m_lbl_year_rebate.ColorBackground(C'30,30,30');
+      m_lbl_year_rebate.Color(clrBase);
+   }
+   
+   void StyleLabel(CLabel &lbl, color clr)
+   {
+      lbl.ColorBackground(C'30,30,30');
+      lbl.Color(clr);
+   }
+   
+private:
+   CLabel m_lbl_band, m_lbl_page, m_lbl_status;
+
+   CLabel m_lbl_balance_key, m_lbl_balance_val;
+   CLabel m_lbl_equity_key, m_lbl_equity_val;
+   CLabel m_lbl_profit_key, m_lbl_profit_val;
+   CLabel m_lbl_spread_key, m_lbl_spread_val;
+   CLabel m_lbl_avg_spread_key, m_lbl_avg_spread_val;
+   
+   // Summary Labels
+   CLabel m_lbl_ord_total_key, m_lbl_ord_total_val;
+   CLabel m_lbl_lot_total_key, m_lbl_lot_total_val;
+   
+   CLabel m_lbl_ord_buy_key, m_lbl_ord_buy_val;
+   CLabel m_lbl_lot_buy_key, m_lbl_lot_buy_val;
+   CLabel m_lbl_prof_buy_key, m_lbl_prof_buy_val;
+   
+   CLabel m_lbl_ord_sell_key, m_lbl_ord_sell_val;
+   CLabel m_lbl_lot_sell_key, m_lbl_lot_sell_val;
+   CLabel m_lbl_prof_sell_key, m_lbl_prof_sell_val;
+
+   CLabel m_lbl_cur_dd_key, m_lbl_cur_dd_val, m_lbl_cur_dd_per;
+   CLabel m_lbl_max_dd_key, m_lbl_max_dd_val, m_lbl_max_dd_per;
+   CLabel m_lbl_clear_dd, m_lbl_date_dd;
+
+   CLabel m_lbl_h_period, m_lbl_h_gain, m_lbl_h_profit, m_lbl_h_lot, m_lbl_h_rebate;
+   CLabel m_lbl_h_daily, m_lbl_h_weekly, m_lbl_h_monthly, m_lbl_h_yearly;
+   CLabel m_lbl_hist_date[7];
+   CLabel m_lbl_hist_per[7];
+   CLabel m_lbl_hist_val[7];
+   CLabel m_lbl_hist_lot[7];
+   CLabel m_lbl_hist_rebate[7];
+   
+   // Weekly History Labels
+   CLabel m_lbl_week_date[4];
+   CLabel m_lbl_week_per[4];
+   CLabel m_lbl_week_val[4];
+   CLabel m_lbl_week_lot[4];
+   CLabel m_lbl_week_rebate[4];
+
+   // Monthly History Labels
+   CLabel m_lbl_mon_date[2];
+   CLabel m_lbl_mon_per[2];
+   CLabel m_lbl_mon_val[2];
+   CLabel m_lbl_mon_lot[2];
+   CLabel m_lbl_mon_rebate[2];
+
+   // Yearly History Labels
+   CLabel m_lbl_year_date;
+   CLabel m_lbl_year_per;
+   CLabel m_lbl_year_val;
+   CLabel m_lbl_year_lot;
+   CLabel m_lbl_year_rebate;
+
+   CPanel m_separator,m_separator2,m_separator3,m_separator4,m_separator5,m_separator6,m_separator7;
+   
+protected:
+   ulong m_last_click_time;
+   datetime m_last_calc_date; // Last date the Big Loop was run
+
+   // Override to prevent Close button creation
+   virtual bool CreateButtonClose() { return(true); }
+   
+   // Override to prevent MinMax button creation 
+   virtual bool CreateButtonMinMax() { return(true); }
 };
 
-CLabelManager LM;
-int lb_band, lb_fb, lb_t_acc, lb_t_spd, lb_t_res, lb_t_cas, lb_t_ln;
-int lb_ab1, lb_ab2;
-int lb_sp1, lb_sp2, lb_sp3, lb_sp4;
-int lb_od1, lb_od2, lb_od3, lb_od4, lb_od5, lb_od6;
-int lb_lt1, lb_lt2, lb_lt3, lb_lt4, lb_lt5, lb_lt6;
-int lb_pf1, lb_pf2, lb_pf3, lb_pf4, lb_pf5, lb_pf6;
-int lb_cd1, lb_cd2, lb_cd3, lb_cd4;
-int lb_dd1, lb_dd2, lb_dd3, lb_dd4;
-int lb_td1, lb_td2, lb_td3, lb_td4, lb_td5, lb_td6;
-int lb_lw1, lb_lw2, lb_lw3, lb_lw4, lb_lw5, lb_lw6;
-int lb_lm1, lb_lm2, lb_lm3, lb_lm4, lb_lm5, lb_lm6;
-int lb_ly1, lb_ly2, lb_ly3, lb_ly4, lb_ly5, lb_ly6;
-int lb_sa1, lb_sa2, lb_sa3, lb_sa4, lb_sa5, lb_sa6;
+CSimplePanel AppWindow;
+int PanelX = 120;
+int PanelY = 20;
+int PanelMinX = 120;
+int PanelMinY = 20;
+bool CurrentStateMinimized = false;
+
+color clrBase = C'180,180,180';
+color clrGain = C'71, 209, 71';
+color clrLoss = C'255, 77, 77';
 
 datetime dtToday, dt7DaysAgo, dt30DaysAgo, dt365DaysAgo;
 // ----- [Label]
@@ -462,6 +1312,27 @@ double netTotal = 0;           // V3
 datetime lastNotify = 0;
 // ----- [Notify]
 
+void LoadGlobalPanel()
+{
+   // SimplePanel_IsMinimized = pnismd
+   if(GlobalVariableCheck(EncodeAZ("pnismd") + _symbol + EA_Name)) 
+      CurrentStateMinimized = (bool)GlobalVariableGet(EncodeAZ("pnismd") + _symbol + EA_Name);
+   
+   // SimplePanel_Max_X = pnmaxx
+   if(GlobalVariableCheck(EncodeAZ("pnmaxx") + _symbol + EA_Name)) 
+      PanelX = (int)GlobalVariableGet(EncodeAZ("pnmaxx") + _symbol + EA_Name);
+   // SimplePanel_Max_Y = pnmaxy
+   if(GlobalVariableCheck(EncodeAZ("pnmaxy") + _symbol + EA_Name)) 
+      PanelY = (int)GlobalVariableGet(EncodeAZ("pnmaxy") + _symbol + EA_Name);
+
+   // SimplePanel_Min_X = pnminx
+   if(GlobalVariableCheck(EncodeAZ("pnminx") + _symbol + EA_Name)) 
+      PanelMinX = (int)GlobalVariableGet(EncodeAZ("pnminx") + _symbol + EA_Name);
+   // SimplePanel_Min_Y = pnminy
+   if(GlobalVariableCheck(EncodeAZ("pnminy") + _symbol + EA_Name)) 
+      PanelMinY = (int)GlobalVariableGet(EncodeAZ("pnminy") + _symbol + EA_Name);
+}
+
 void LoadVariable()
 {
    // gblUserApproveDate = apvdate
@@ -561,10 +1432,9 @@ int OnInit()
    isBoost = Boost_MODE;
 
    CreateAverageLine();
+
+   LoadGlobalPanel();
    CreateLabel();
-   SortObject();
-   // RefreshButton(objButton[0], FNC_Auto_Remove);
-   // RefreshButton(objButton[1], false);
 
    return (INIT_SUCCEEDED);
 }
@@ -574,10 +1444,6 @@ int OnInit()
 //+----------------------------------------+
 void OnDeinit(const int reason)
 {
-   // if(ObjectFind(0, BTN1) != -1)
-   //    ObjectDelete(0, BTN1);
-   // if(ObjectFind(0, BTN2) != -1)
-   //    ObjectDelete(0, BTN2);
    if(ObjectFind(0, avgBuy) != -1)
       ObjectDelete(0, avgBuy);
    if(ObjectFind(0, infoBuy) != -1)
@@ -587,7 +1453,11 @@ void OnDeinit(const int reason)
    if(ObjectFind(0, infoSell) != -1)
       ObjectDelete(0, infoSell);
 
-   LM.DeleteAll();
+   GlobalVariableSet(EncodeAZ("pnismd") + _symbol + EA_Name, AppWindow.IsMinimized());
+   
+   AppWindow.Destroy(reason);
+   ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, 0); 
+
    Comment("");
 }
 
@@ -625,10 +1495,9 @@ void OnTick()
 
    AverageSpread();
    ResetProfitParams();
-   CalculateReport();
    UpdateTotalsInPoints();
    NotifyFeatures();
-   UpdateLabels();
+   if(!CurrentStateMinimized) AppWindow.UpdateData();
    UpdateAverageLine();
    ShowComment();
    // return;
@@ -660,104 +1529,19 @@ void OnTick()
 //+----------------------------------------+
 //| UI functions                           |
 //+----------------------------------------+
-// ----- [All objects]
-void SortObject()
-{
-   // // ------------- Label -------------
-   // if (Label_Position == Button_Position)
-   // {
-   //    for (int i = 0; i < LM.Count(); i++)
-   //    {
-   //       LM.Get(i).MoveY(LM.Get(i).y + 60);
-   //    }
-   // }
-
-   if (Label_Position == TOP_RIGHT || Label_Position == BOTTOM_RIGHT)
-   {
-      int cur_group = 0;
-      int oldX = 0;
-
-      for (int i = 0; i < LM.Count(); i++)
-      {
-         if (LM.Get(i).group == 0)
-         {
-            LM.Get(i).MoveX(LM.Get(i).x + 400);
-         }
-         else
-         {
-            if (cur_group != LM.Get(i).group)
-            {
-               cur_group = LM.Get(i).group;
-               oldX = LM.Get(i).x;
-               LM.Get(i).MoveX(LM.Get(i).x + 400);
-            }
-            else
-            {
-               int prev = LM.Get(i - 1).x;
-               int cur = LM.Get(i).x;
-
-               int diff = cur - oldX;
-               int newX = prev - diff;
-               LM.Get(i).MoveX(newX);
-               oldX = cur;
-            }
-         }
-      }
-   }
-
-   return;
-   // ------------- Button -------------
-   int btnX = 0;
-   int space = 10;
-
-   if (Button_Position == TOP_LEFT || Button_Position == BOTTOM_LEFT)
-   {
-      for (int i = 0; i < ArraySize(objButton); i++)
-      {
-         btnX += space;
-         if (i > 0)
-            btnX += objButton[i - 1].width;
-
-         objButton[i].disX = btnX;
-      }
-   }
-   else if (Button_Position == TOP_RIGHT || Button_Position == BOTTOM_RIGHT)
-   {
-      for (int i = ArraySize(objButton) - 1; i >= 0; i--)
-      {
-         btnX = objButton[i].width + space;
-
-         if (i < ArraySize(objButton) - 1)
-            btnX += objButton[i + 1].disX;
-
-         objButton[i].disX = btnX;
-      }
-   }
-}
-
+// ----- [Event]
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
 {
+   AppWindow.ChartEvent(id,lparam,dparam,sparam);
+
    if (id == CHARTEVENT_OBJECT_CLICK)
    {
-      if (sparam == BTN1)
-      {
-         FNC_Auto_Remove = !FNC_Auto_Remove;
-         RefreshButton(objButton[0], FNC_Auto_Remove);
-      }
+      // Check for Click on Caption
+      if(StringFind(sparam, "Caption") >= 0)
+         AppWindow.ProcessCaptionClick();
 
-      if (sparam == BTN2)
-      {
-         if (totalOrders >= Remove_At)
-         {
-            AutomaticCloseOrders();
-         }
-         else
-         {
-            Alert("Current orders less than ", Remove_At);
-         }
-      }
-
-      if(sparam == "lb_cd4")
+      // Check for Click on ClearDD Label
+      if(StringFind(sparam, "ClearDD") >= 0)
       {
          SaveMaxDrawDown(0, 0, 0);
          maxDrawDown = 0;
@@ -765,388 +1549,100 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          maxDD_Date = 0;
       }
    }
+
+   // Check current state after event processing
+   bool isMin = AppWindow.IsMinimized();
+
+   // --- CASE 1: State Change (Toggle Button Clicked) ---
+   if(isMin != CurrentStateMinimized)
+   {
+      CurrentStateMinimized = isMin;
+      GlobalVariableSet(EncodeAZ("pnismd") + _symbol + EA_Name, CurrentStateMinimized);
+      
+      if(CurrentStateMinimized)
+      {
+         // Changed to Minimized: Jump to saved Minimized Position
+         AppWindow.Move(PanelMinX, PanelMinY);
+      }
+      else
+      {
+         // Changed to Maximized: Jump to saved Maximized Position
+         AppWindow.Move(PanelX, PanelY);
+      }
+   }
+
+   // --- CASE 2: Mouse Release (Position Change) ---
+   if(id == CHARTEVENT_MOUSE_MOVE)
+   {
+      int mouseState = (int)StringToInteger(sparam);
+      
+      // If Left Button is NOT pressed (Released)
+      if((mouseState & 1) == 0)
+      {
+         int currentX = AppWindow.Left();
+         int currentY = AppWindow.Top();
+         
+         if(CurrentStateMinimized)
+         {
+            // IF MOVED while Minimized
+            if(currentX != PanelMinX || currentY != PanelMinY)
+            {
+               PanelMinX = currentX;
+               PanelMinY = currentY;
+               GlobalVariableSet(EncodeAZ("pnminx") + _symbol + EA_Name, PanelMinX);
+               GlobalVariableSet(EncodeAZ("pnminy") + _symbol + EA_Name, PanelMinY);
+            }
+         }
+         else
+         {
+            // IF MOVED while Maximized
+            if(currentX != PanelX || currentY != PanelY)
+            {
+               PanelX = currentX;
+               PanelY = currentY;
+               GlobalVariableSet(EncodeAZ("pnmaxx") + _symbol + EA_Name, PanelX);
+               GlobalVariableSet(EncodeAZ("pnmaxy") + _symbol + EA_Name, PanelY);
+            }
+         }
+      }
+   }
 }
-// ----- [All objects]
+// ----- [Event]
 
 // ----- [Label]
 void CreateLabel()
 {
-   if (Label_Position == TOP_LEFT || Label_Position == TOP_RIGHT)
-   {
-      lb_band = LM.Add("lb_band", Comp_Name + " | " + EA_Name, 0, 10, 20);
-      lb_fb = LM.Add("lb_fb", "www.facebook.com/LocalFX4U", 0, 10, 43);
+   int startX = CurrentStateMinimized ? PanelMinX : PanelX;
+   int startY = CurrentStateMinimized ? PanelMinY : PanelY;
 
-      lb_t_acc = LM.Add("lb_t_acc", "===================== Account =====================", 0, 10, 65);
-      lb_ab1 = LM.Add("lb_ab1", "Account balance:", 1, 10, 80);
-      lb_ab2 = LM.Add("lb_ab2", "-", 1, 170, 80);
-
-      lb_t_spd = LM.Add("lb_t_spd", "====================== Spread =====================", 0, 10, 100);
-      lb_sp1 = LM.Add("lb_sp1", "Current Spread:", 2, 10, 115);
-      lb_sp2 = LM.Add("lb_sp2", "-", 2, 120, 115);
-      lb_sp3 = LM.Add("lb_sp3", "Average Spread:", 2, 200, 115);
-      lb_sp4 = LM.Add("lb_sp4", "-", 2, 315, 115);
+   // 5. Create Panel (Increased Height for Monthly/Yearly)
+   if(!AppWindow.Create(0,"Golden Hour",0,startX,startY,startX+380,startY+680))
+      return;
       
-      lb_t_cas = LM.Add("lb_t_cas", "======================= Trade =====================", 0, 10, 135);
-      lb_od1 = LM.Add("lb_od1", "Total Order:", 3, 10, 150);
-      lb_od2 = LM.Add("lb_od2", "-", 3, 80, 150);
-      lb_od3 = LM.Add("lb_od3", "Buy:", 3, 170, 150);
-      lb_od4 = LM.Add("lb_od4", "-", 3, 200, 150);
-      lb_od5 = LM.Add("lb_od5", "Sell:", 3, 290, 150);
-      lb_od6 = LM.Add("lb_od6", "-", 3, 320, 150);
-
-      lb_lt1 = LM.Add("lb_lt1", "Total Lot:", 4, 10, 165);
-      lb_lt2 = LM.Add("lb_lt2", "-", 4, 80, 165);
-      lb_lt3 = LM.Add("lb_lt3", "Buy:", 4, 170, 165);
-      lb_lt4 = LM.Add("lb_lt4", "-", 4, 200, 165);
-      lb_lt5 = LM.Add("lb_lt5", "Sell:", 4, 290, 165);
-      lb_lt6 = LM.Add("lb_lt6", "-", 4, 320, 165);
-
-      lb_pf1 = LM.Add("lb_pf1", "Net Profit:", 5, 10, 185);
-      lb_pf2 = LM.Add("lb_pf2", "-", 5, 80, 185);
-      lb_pf3 = LM.Add("lb_pf3", "Buy:", 5, 170, 185);
-      lb_pf4 = LM.Add("lb_pf4", "-", 5, 200, 185);
-      lb_pf5 = LM.Add("lb_pf5", "Sell:", 5, 290, 185);
-      lb_pf6 = LM.Add("lb_pf6", "-", 5, 320, 185);
-
-      lb_t_res = LM.Add("lb_t_res", "======================= Result ====================", 0, 10, 205);
-      lb_cd1 = LM.Add("lb_cd1", "Current DD:", 6, 10, 225);
-      lb_cd2 = LM.Add("lb_cd2", "-", 6, 80, 225);
-      lb_cd3 = LM.Add("lb_cd3", "-", 6, 200, 225);
-      lb_cd4 = LM.Add("lb_cd4", "Clear Max DD", 6, 285, 225);
-
-      lb_dd1 = LM.Add("lb_dd1", "Max DD:", 7, 10, 240);
-      lb_dd2 = LM.Add("lb_dd2", "-", 7, 80, 240);
-      lb_dd3 = LM.Add("lb_dd3", "-", 7, 200, 240);
-      lb_dd4 = LM.Add("lb_dd4", "-", 7, 280, 240);
-
-      lb_td1 = LM.Add("lb_td1", "Today:", 8, 10, 265);
-      lb_td2 = LM.Add("lb_td2", "0.00", 8, 55, 265);
-      lb_td3 = LM.Add("lb_td3", "Lot:", 8, 170, 265);
-      lb_td4 = LM.Add("lb_td4", "0.00", 8, 200, 265);
-      lb_td5 = LM.Add("lb_td5", "Rebate:", 8, 290, 265);
-      lb_td6 = LM.Add("lb_td6", "0.00", 8, 340, 265);
-
-      lb_lw1 = LM.Add("lb_lw1", "Week:", 9, 10, 280);
-      lb_lw2 = LM.Add("lb_lw2", "0.00", 9, 55, 280);
-      lb_lw3 = LM.Add("lb_lw3", "Lot:", 9, 170, 280);
-      lb_lw4 = LM.Add("lb_lw4", "0.00", 9, 200, 280);
-      lb_lw5 = LM.Add("lb_lw5", "Rebate:", 9, 290, 280);
-      lb_lw6 = LM.Add("lb_lw6", "0.00", 9, 340, 280);
-
-      lb_lm1 = LM.Add("lb_lm1", "Month:", 10, 10, 295);
-      lb_lm2 = LM.Add("lb_lm2", "0.00", 10, 55, 295);
-      lb_lm3 = LM.Add("lb_lm3", "Lot:", 10, 170, 295);
-      lb_lm4 = LM.Add("lb_lm4", "0.00", 10, 200, 295);
-      lb_lm5 = LM.Add("lb_lm5", "Rebate:", 10, 290, 295);
-      lb_lm6 = LM.Add("lb_lm6", "0.00", 10, 340, 295);
-
-      lb_ly1 = LM.Add("lb_ly1", "Year:", 11, 10, 310);
-      lb_ly2 = LM.Add("lb_ly2", "0.00", 11, 55, 310);
-      lb_ly3 = LM.Add("lb_ly3", "Lot:", 11, 170, 310);
-      lb_ly4 = LM.Add("lb_ly4", "0.00", 11, 200, 310);
-      lb_ly5 = LM.Add("lb_ly5", "Rebate:", 11, 290, 310);
-      lb_ly6 = LM.Add("lb_ly6", "0.00", 11, 340, 310);
-
-      lb_t_ln = LM.Add("lb_t_ln", "________________________________________________________", 0, 10, 317);
-
-      lb_sa1 = LM.Add("lb_sa1", "Total:", 12, 10, 340);
-      lb_sa2 = LM.Add("lb_sa2", "0.00", 12, 55, 340);
-      lb_sa3 = LM.Add("lb_sa3", "Lot:", 12, 170, 340);
-      lb_sa4 = LM.Add("lb_sa4", "0.00", 12, 200, 340);
-      lb_sa5 = LM.Add("lb_sa5", "Rebate:", 12, 290, 340);
-      lb_sa6 = LM.Add("lb_sa6", "0.00", 12, 340, 340);
-   }
-   else if (Label_Position == BOTTOM_LEFT || Label_Position == BOTTOM_RIGHT)
+   AppWindow.Run();
+   
+   // Create Data Labels
+   if(!AppWindow.CreateDataLabels())
+      Print("Error creating Data labels");
+      
+   // Update data immediately if not minimized
+   if(!CurrentStateMinimized) AppWindow.UpdateData();
+   
+   // 6. Restore Minimized State
+   if(CurrentStateMinimized)
    {
-      lb_band = LM.Add("lb_band", Comp_Name + " | " + EA_Name, 0, 10, 360);
-      lb_fb = LM.Add("lb_fb", "www.facebook.com/LocalFX4U", 0, 10, 337);
-
-      lb_t_acc = LM.Add("lb_t_acc", "===================== Account =====================", 0, 10, 315);
-      lb_ab1 = LM.Add("lb_ab1", "Account balance:", 1, 10, 300);
-      lb_ab2 = LM.Add("lb_ab2", "-", 1, 170, 300);
-
-      lb_t_spd = LM.Add("lb_t_spd", "====================== Spread =====================", 0, 10, 280);
-      lb_sp1 = LM.Add("lb_sp1", "Current Spread:", 2, 10, 265);
-      lb_sp2 = LM.Add("lb_sp2", "-", 2, 120, 265);
-      lb_sp3 = LM.Add("lb_sp3", "Average Spread:", 2, 200, 265);
-      lb_sp4 = LM.Add("lb_sp4", "-", 2, 315, 265);
-
-      lb_t_cas = LM.Add("lb_t_cas", "======================= Trade =====================", 0, 10, 245);
-      lb_od1 = LM.Add("lb_od1", "Total Order:", 3, 10, 230);
-      lb_od2 = LM.Add("lb_od2", "-", 3, 80, 230);
-      lb_od3 = LM.Add("lb_od3", "Buy:", 3, 170, 230);
-      lb_od4 = LM.Add("lb_od4", "-", 3, 200, 230);
-      lb_od5 = LM.Add("lb_od5", "Sell:", 3, 290, 230);
-      lb_od6 = LM.Add("lb_od6", "-", 3, 320, 230);
-
-      lb_lt1 = LM.Add("lb_lt1", "Total Lot:", 4, 10, 215);
-      lb_lt2 = LM.Add("lb_lt2", "-", 4, 80, 215);
-      lb_lt3 = LM.Add("lb_lt3", "Buy:", 4, 170, 215);
-      lb_lt4 = LM.Add("lb_lt4", "-", 4, 200, 215);
-      lb_lt5 = LM.Add("lb_lt5", "Sell:", 4, 290, 215);
-      lb_lt6 = LM.Add("lb_lt6", "-", 4, 320, 215);
-
-      lb_pf1 = LM.Add("lb_pf1", "Net Profit:", 5, 10, 200);
-      lb_pf2 = LM.Add("lb_pf2", "-", 5, 80, 200);
-      lb_pf3 = LM.Add("lb_pf3", "Buy:", 5, 170, 200);
-      lb_pf4 = LM.Add("lb_pf4", "-", 5, 200, 200);
-      lb_pf5 = LM.Add("lb_pf5", "Sell:", 5, 290, 200);
-      lb_pf6 = LM.Add("lb_pf6", "-", 5, 320, 200);
-
-      lb_t_res = LM.Add("lb_t_res", "======================= Result ====================", 0, 10, 175);
-      lb_cd1 = LM.Add("lb_cd1", "Current DD:", 6, 10, 155);
-      lb_cd2 = LM.Add("lb_cd2", "-", 6, 80, 155);
-      lb_cd3 = LM.Add("lb_cd3", "-", 6, 200, 155);
-      lb_cd4 = LM.Add("lb_cd4", "[Clear Max DD]", 6, 285, 155);
-
-      lb_dd1 = LM.Add("lb_dd1", "Max DD:", 7, 10, 140);
-      lb_dd2 = LM.Add("lb_dd2", "-", 7, 80, 140);
-      lb_dd3 = LM.Add("lb_dd3", "-", 7, 200, 140);
-      lb_dd4 = LM.Add("lb_dd4", "-", 7, 280, 140);
-
-      lb_td1 = LM.Add("lb_td1", "Today:", 8, 10, 115);
-      lb_td2 = LM.Add("lb_td2", "0.00", 8, 55, 115);
-      lb_td3 = LM.Add("lb_td3", "Lot:", 8, 170, 115);
-      lb_td4 = LM.Add("lb_td4", "0.00", 8, 200, 115);
-      lb_td5 = LM.Add("lb_td5", "Rebate:", 8, 290, 115);
-      lb_td6 = LM.Add("lb_td6", "0.00", 8, 340, 115);
-
-      lb_lw1 = LM.Add("lb_lw1", "Week:", 9, 10, 100);
-      lb_lw2 = LM.Add("lb_lw2", "0.00", 9, 55, 100);
-      lb_lw3 = LM.Add("lb_lw3", "Lot:", 9, 170, 100);
-      lb_lw4 = LM.Add("lb_lw4", "0.00", 9, 200, 100);
-      lb_lw5 = LM.Add("lb_lw5", "Rebate:", 9, 290, 100);
-      lb_lw6 = LM.Add("lb_lw6", "0.00", 9, 340, 100);
-
-      lb_lm1 = LM.Add("lb_lm1", "Month:", 10, 10, 85);
-      lb_lm2 = LM.Add("lb_lm2", "0.00", 10, 55, 85);
-      lb_lm3 = LM.Add("lb_lm3", "Lot:", 10, 170, 85);
-      lb_lm4 = LM.Add("lb_lm4", "0.00", 10, 200, 85);
-      lb_lm5 = LM.Add("lb_lm5", "Rebate:", 10, 290, 85);
-      lb_lm6 = LM.Add("lb_lm6", "0.00", 10, 340, 85);
-
-      lb_ly1 = LM.Add("lb_ly1", "Year:", 11, 10, 70);
-      lb_ly2 = LM.Add("lb_ly2", "0.00", 11, 55, 70);
-      lb_ly3 = LM.Add("lb_ly3", "Lot:", 11, 170, 70);
-      lb_ly4 = LM.Add("lb_ly4", "0.00", 11, 200, 70);
-      lb_ly5 = LM.Add("lb_ly5", "Rebate:", 11, 290, 70);
-      lb_ly6 = LM.Add("lb_ly6", "0.00", 11, 340, 70);
-
-      lb_t_ln = LM.Add("lb_t_ln", "________________________________________________________", 0, 10, 63);
-
-      lb_sa1 = LM.Add("lb_sa1", "Total:", 12, 10, 40);
-      lb_sa2 = LM.Add("lb_sa2", "0.00", 12, 55, 40);
-      lb_sa3 = LM.Add("lb_sa3", "Lot:", 12, 170, 40);
-      lb_sa4 = LM.Add("lb_sa4", "0.00", 12, 200, 40);
-      lb_sa5 = LM.Add("lb_sa5", "Rebate:", 12, 290, 40);
-      lb_sa6 = LM.Add("lb_sa6", "0.00", 12, 340, 40);
+      AppWindow.SetMinimized(true);
+      AppWindow.Move(PanelMinX, PanelMinY);
    }
-
-   LM.Get(lb_band).SetSize(15);
-   LM.Get(lb_band).SetColor(clrDeepSkyBlue);
-   LM.Get(lb_fb).SetColor(clrGoldenrod);
-   LM.Get(lb_cd4).SetColor(clrRed);
-   LM.Get(lb_t_acc).SetColor(clrLightSlateGray);
-   LM.Get(lb_t_spd).SetColor(clrLightSlateGray);
-   LM.Get(lb_t_res).SetColor(clrLightSlateGray);
-   LM.Get(lb_t_cas).SetColor(clrLightSlateGray);
-   LM.Get(lb_t_ln).SetColor(clrLightSlateGray);
-}
-
-void UpdateLabels()
-{
-   string boost_and_safe = "     ";
-   if(isBoost)
-   {
-      boost_and_safe += "  [BOOST]";
-   }
-   if(Safe_Type != "")
-   {
-      boost_and_safe += "  [SAFE]";
-   }
-
-   LM.Get(lb_ab2).SetText(NumberFormat((string)AccountInfoDouble(ACCOUNT_BALANCE)) + boost_and_safe);
-
-   LM.Get(lb_sp2).SetText((string)(int)(_spread / _point));
-   LM.Get(lb_sp4).SetText((string)(int)(avg_spread / _point));
-
-   LM.Get(lb_od2).SetText((string)totalOrders);
-   LM.Get(lb_od4).SetText((string)countBuy);
-   LM.Get(lb_od6).SetText((string)countSell);
-
-   LM.Get(lb_lt2).SetText(NumberFormat((string)TotalLot));
-   LM.Get(lb_lt4).SetText(NumberFormat((string)sumLotBuy));
-   LM.Get(lb_lt6).SetText(NumberFormat((string)sumLotSell));
-
-   LM.Get(lb_pf2).SetText(NumberFormat((string)NetProfitTotal));
-   LM.Get(lb_pf4).SetText(NumberFormat((string)currentBuyProfit));
-   LM.Get(lb_pf6).SetText(NumberFormat((string)currentSellProfit));
-
-   LM.Get(lb_cd2).SetText(NumberFormat((string)curDrawDown));
-   LM.Get(lb_cd3).SetText("(" + NumberFormat((string)curDD_Per) + "%)");
-
-   string txtMaxDD_date = maxDD_Date == 0 ? "-" : TimeToString(maxDD_Date);
-   LM.Get(lb_dd2).SetText(NumberFormat((string)maxDrawDown));
-   LM.Get(lb_dd3).SetText("(" + NumberFormat((string)maxDD_Per) + "%)");
-   LM.Get(lb_dd4).SetText(txtMaxDD_date);
-}
-
-void CalculateReport()
-{
-   datetime from_time = St_Date;
-   datetime to_time = TimeCurrent();
-
-   if (HistorySelect(from_time, to_time))
-   {
-      int total_deals = HistoryDealsTotal();
-
-      double _day = 0;
-      double _week = 0;
-      double _month = 0;
-      double _year = 0;
-      double _total = 0;
-
-      double _day_lot = 0;
-      double _week_lot = 0;
-      double _month_lot = 0;
-      double _year_lot = 0;
-      double _total_lot = 0;
-
-      for (int i = 0; i < total_deals; i++)
-      {
-         ulong deal_ticket = HistoryDealGetTicket(i);
-         string symbol = HistoryDealGetString(deal_ticket, DEAL_SYMBOL);
-
-         if (symbol != _Symbol)
-         {
-            continue;
-         }
-
-         long deal_entry = HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
-         long deal_type = HistoryDealGetInteger(deal_ticket, DEAL_TYPE);
-         long magic = HistoryDealGetInteger(deal_ticket, DEAL_MAGIC);
-         double lot = HistoryDealGetDouble(deal_ticket, DEAL_VOLUME);
-         double swap = HistoryDealGetDouble(deal_ticket, DEAL_SWAP);
-         double comm = HistoryDealGetDouble(deal_ticket, DEAL_COMMISSION);
-         double profit = HistoryDealGetDouble(deal_ticket, DEAL_PROFIT) + swap + comm;
-         long close_time = HistoryDealGetInteger(deal_ticket, DEAL_TIME_MSC);
-         datetime _close_time = (datetime)(close_time / 1000);
-
-         if (deal_entry == DEAL_ENTRY_OUT) // only closed order
-         {
-            if (_close_time > dtToday)
-            {
-               _day += profit;
-               _day_lot += lot;
-            }
-            if (_close_time > dt7DaysAgo)
-            {
-               _week += profit;
-               _week_lot += lot;
-            }
-            if (_close_time > dt30DaysAgo)
-            {
-               _month += profit;
-               _month_lot += lot;
-            }
-            if (_close_time > dt365DaysAgo)
-            {
-               _year += profit;
-               _year_lot += lot;
-            }
-            _total += profit;
-            _total_lot += lot;
-         }
-      }
-
-      double pd = _day > 0 ? (_day / (acc_balance - _day)) * 100 : _day / (acc_balance + _day) * 100;
-      double pw = _week > 0 ? (_week / (acc_balance - _week)) * 100 : _week / (acc_balance + _week) * 100;
-      double pm = _month > 0 ? (_month / (acc_balance - _month)) * 100 : _month / (acc_balance + _month) * 100;
-      double py = _year > 0 ? (_year / (acc_balance - _year)) * 100 : _year / (acc_balance + _year) * 100;
-      double pa = _total > 0 ? (_total / (acc_balance - _total)) * 100 : _total / (acc_balance + _total) * 100;
-
-      double rb_d = _day_lot * _rebate;
-      double rb_w = _week_lot * _rebate;
-      double rb_m = _month_lot * _rebate;
-      double rb_y = _year_lot * _rebate;
-      double rb_a = _total_lot * _rebate;
-
-      LM.Get(lb_td2).SetText(NumberFormat((string)pd) + "%");
-      LM.Get(lb_td4).SetText(NumberFormat((string)_day_lot));
-      LM.Get(lb_td6).SetText(NumberFormat((string)rb_d));
-      LM.Get(lb_lw2).SetText(NumberFormat((string)pw) + "%");
-      LM.Get(lb_lw4).SetText(NumberFormat((string)_week_lot));
-      LM.Get(lb_lw6).SetText(NumberFormat((string)rb_w));
-      LM.Get(lb_lm2).SetText(NumberFormat((string)pm) + "%");
-      LM.Get(lb_lm4).SetText(NumberFormat((string)_month_lot));
-      LM.Get(lb_lm6).SetText(NumberFormat((string)rb_m));
-      LM.Get(lb_ly2).SetText(NumberFormat((string)py) + "%");
-      LM.Get(lb_ly4).SetText(NumberFormat((string)_year_lot));
-      LM.Get(lb_ly6).SetText(NumberFormat((string)rb_y));
-      LM.Get(lb_sa2).SetText(NumberFormat((string)pa) + "%");
-      LM.Get(lb_sa4).SetText(NumberFormat((string)_total_lot));
-      LM.Get(lb_sa6).SetText(NumberFormat((string)rb_a));
-   }
+   
+   // Enable Mouse Move Event
+   ChartSetInteger(0, CHART_EVENT_MOUSE_MOVE, 1);
+   
+   // Apply Dark Theme
+   AppWindow.ApplyDarkTheme();
+   ChartRedraw();
 }
 // ----- [Label]
-
-// ----- [Button]
-void CreateButton(Button &btn, string text, color textColor, color backColor)
-{
-   if (ObjectFind(0, btn.name) != -1)
-      ObjectDelete(0, btn.name);
-
-   ObjectCreate(0, btn.name, OBJ_BUTTON, 0, 0, 0);
-
-   int disX = btn.disX;
-   int disY = 0;
-   int spaceY = 10;
-
-   if (Button_Position == TOP_LEFT || Button_Position == TOP_RIGHT)
-   {
-      disY = btn.higth - spaceY;
-   }
-   else if (Button_Position == BOTTOM_LEFT || Button_Position == BOTTOM_RIGHT)
-   {
-      disY = btn.higth + spaceY;
-   }
-
-   ObjectSetInteger(0, btn.name, OBJPROP_CORNER, Button_Position);
-   ObjectSetInteger(0, btn.name, OBJPROP_XDISTANCE, disX);
-   ObjectSetInteger(0, btn.name, OBJPROP_YDISTANCE, disY);
-   ObjectSetInteger(0, btn.name, OBJPROP_XSIZE, btn.width);
-   ObjectSetInteger(0, btn.name, OBJPROP_YSIZE, btn.higth);
-
-   ObjectSetInteger(0, btn.name, OBJPROP_COLOR, textColor);
-   ObjectSetString(0, btn.name, OBJPROP_TEXT, text);
-   ObjectSetInteger(0, btn.name, OBJPROP_FONTSIZE, 12);
-   ObjectSetString(0, btn.name, OBJPROP_FONT, "Arial");
-
-   // ปรับสีพื้นหลัง (รองรับ)
-   ObjectSetInteger(0, btn.name, OBJPROP_BGCOLOR, backColor);
-   // ทำให้ปุ่มดูโค้ง (แบบจำลอง ด้วย BORDER_FLAT)
-   ObjectSetInteger(0, btn.name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
-}
-
-void RefreshButton(Button &btn, bool key)
-{
-   string btnText = btn.text;
-   color clrText = btn.clrText;
-   color clrBg = btn.clrBackground;
-
-   if (btn.name == BTN1)
-   {
-      btnText += key ? " [ON]" : " [OFF]";
-      clrText = key ? clrText : clrDimGray;
-      clrBg = key ? clrBg : clrDarkGray;
-   }
-   else if (btn.name == BTN2)
-   {
-   }
-
-   CreateButton(btn, btnText, clrText, clrBg);
-}
-// ----- [Button]
 
 // ----- [Spread]
 void AverageSpread()
