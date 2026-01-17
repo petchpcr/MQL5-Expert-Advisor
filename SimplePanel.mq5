@@ -79,7 +79,7 @@ public:
       y += step+5;
       // -- Separator -----------------------------
       int y_sep = y;
-      if(!m_separator.Create(m_chart_id, m_name+"Sep", m_subwin, 10, y_sep, 420, y_sep+1)) return false;
+      if(!m_separator.Create(m_chart_id, m_name+"Sep", m_subwin, 10, y_sep, 370, y_sep+1)) return false;
       if(!m_separator.ColorBackground(C'60,60,60')) return false;
       if(!Add(m_separator)) return false;
 
@@ -120,7 +120,7 @@ public:
       y += 5; // Extra spacing before separator
       // -- Separator -----------------------------
       y_sep = y;
-      if(!m_separator2.Create(m_chart_id, m_name+"Sep2", m_subwin, 10, y_sep, 420, y_sep+1)) return false;
+      if(!m_separator2.Create(m_chart_id, m_name+"Sep2", m_subwin, 10, y_sep, 370, y_sep+1)) return false;
       if(!m_separator2.ColorBackground(C'60,60,60')) return false;
       if(!Add(m_separator2)) return false;
 
@@ -146,77 +146,101 @@ public:
       y += 5; // Extra spacing before separator
       // -- Separator -----------------------------
       y_sep = y;
-      if(!m_separator3.Create(m_chart_id, m_name+"Sep3", m_subwin, 10, y_sep, 420, y_sep+1)) return false;
+      if(!m_separator3.Create(m_chart_id, m_name+"Sep3", m_subwin, 10, y_sep, 370, y_sep+1)) return false;
       if(!m_separator3.ColorBackground(C'60,60,60')) return false;
       if(!Add(m_separator3)) return false;
 
+      int x_h_col1 = 10;
+      int x_h_col2 = 95;
+      int x_h_col3 = 160;
+      int x_h_col4 = 250;
+      int x_h_col5 = 310;
+      y += 5; // Header
+      if(!CreateLabel(m_lbl_h_period, "",    "HPeriod", x_h_col1, y, x_h_col1+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_h_gain, "Gain %",      "HGain", x_h_col2, y, x_h_col2+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_h_profit, "Profit $",  "HProfit", x_h_col3, y, x_h_col3+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_h_lot, "Lot",          "HLot", x_h_col4, y, x_h_col4+50, y+20)) return false;
+      if(!CreateLabel(m_lbl_h_rebate, "Rebate",    "HRebate", x_h_col5, y, x_h_col5+50, y+20)) return false;
+
+      y += summary_step; 
+
+      int x_ly_col1 = 10;
+      int x2_ly_col1 = x_ly_col1+50;
+      if(!CreateLabel(m_lbl_h_daily, "Daily (7D)", "HDaily", x_ly_col1, y-10, x2_ly_col1, y+10)) return false;
+
+      // -- Separator -----------------------------
+      y_sep = y;
+      if(!m_separator4.Create(m_chart_id, m_name+"Sep4", m_subwin, x2_ly_col1+10, y_sep, 370, y_sep+1)) return false;
+      if(!m_separator4.ColorBackground(C'60,60,60')) return false;
+      if(!Add(m_separator4)) return false;
+
       // History List (7 Days)
-      y += 5; // Start History
+      y += 10; // Start History
       for(int i=0; i<7; i++)
       {
           // Date Label
-          if(!CreateLabel(m_lbl_hist_date[i], "Date", "HDate"+(string)i, 10, y, 90, y+20)) return false;
+          if(!CreateLabel(m_lbl_hist_date[i], "Date", "HDate"+(string)i, x_h_col1, y, x_h_col1+50, y+20)) return false;
           // Percent Label
-          if(!CreateLabel(m_lbl_hist_per[i], "0.00", "HPer"+(string)i, 90, y, 270, y+20)) return false;
+          if(!CreateLabel(m_lbl_hist_per[i], "0.00", "HPer"+(string)i, x_h_col2, y, x_h_col2+50, y+20)) return false;
           // Value Label
-          if(!CreateLabel(m_lbl_hist_val[i], "0.00", "HVal"+(string)i, 145, y, 270, y+20)) return false;
+          if(!CreateLabel(m_lbl_hist_val[i], "0.00", "HVal"+(string)i, x_h_col3, y, x_h_col3+50, y+20)) return false;
           // Lot Label
-          if(!CreateLabel(m_lbl_hist_lot[i], "0.00", "LVal"+(string)i, 220, y, 270, y+20)) return false;
+          if(!CreateLabel(m_lbl_hist_lot[i], "0.00", "LVal"+(string)i, x_h_col4, y, x_h_col4+50, y+20)) return false;
           // Rebate Label
-          if(!CreateLabel(m_lbl_hist_rebate[i], "0.00", "RVal"+(string)i, 310, y, 270, y+20)) return false;
+          if(!CreateLabel(m_lbl_hist_rebate[i], "0.00", "RVal"+(string)i, x_h_col5, y, x_h_col5+50, y+20)) return false;
           y += 20;
       }
 
       y += 10;
+      if(!CreateLabel(m_lbl_h_weekly, "Weekly (4W)", "HWeekly", x_ly_col1, y-10, x2_ly_col1, y+10)) return false;
       // -- Separator -----------------------------
       y_sep = y;
-      if(!m_separator4.Create(m_chart_id, m_name+"Sep4", m_subwin, 10, y_sep, 420, y_sep+1)) return false;
-      if(!m_separator4.ColorBackground(C'60,60,60')) return false;
-      if(!Add(m_separator4)) return false;
-
-
-      
+      if(!m_separator5.Create(m_chart_id, m_name+"Sep5", m_subwin, x2_ly_col1+30, y_sep, 370, y_sep+1)) return false;
+      if(!m_separator5.ColorBackground(C'60,60,60')) return false;
+      if(!Add(m_separator5)) return false;
 
        y += 10;
        // Weekly History (4 Weeks)
        // Weekly History (4 Weeks)
        for(int i=0; i<4; i++)
        {
-           if(!CreateLabel(m_lbl_week_date[i], "Week", "WDate"+(string)i, 10, y, 90, y+20)) return false;
-           if(!CreateLabel(m_lbl_week_per[i],  "0.00", "WPer"+(string)i,   90, y, 270, y+20)) return false;
-           if(!CreateLabel(m_lbl_week_val[i],  "0.00", "WVal"+(string)i,   145, y, 270, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_date[i], "Week", "WDate"+(string)i, x_h_col1, y, x_h_col1+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_per[i],  "0.00", "WPer"+(string)i, x_h_col2, y, x_h_col2+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_week_val[i],  "0.00", "WVal"+(string)i, x_h_col3, y, x_h_col3+50, y+20)) return false;
            y += 20;
        }
  
        y += 10;
+       if(!CreateLabel(m_lbl_h_monthly, "Monthly (2M)", "HMonthly", x_ly_col1, y-10, x2_ly_col1, y+10)) return false;
        // -- Separator -----------------------------
        y_sep = y;
-       if(!m_separator5.Create(m_chart_id, m_name+"Sep5", m_subwin, 10, y_sep, 420, y_sep+1)) return false;
-       if(!m_separator5.ColorBackground(C'60,60,60')) return false;
-       if(!Add(m_separator5)) return false;
+       if(!m_separator6.Create(m_chart_id, m_name+"Sep6", m_subwin, x2_ly_col1+30, y_sep, 370, y_sep+1)) return false;
+       if(!m_separator6.ColorBackground(C'60,60,60')) return false;
+       if(!Add(m_separator6)) return false;
 
        y += 10;
        // Monthly History (2 Months)
        for(int i=0; i<2; i++)
        {
-           if(!CreateLabel(m_lbl_mon_date[i], "Month", "MDate"+(string)i, 10, y, 90, y+20)) return false;
-           if(!CreateLabel(m_lbl_mon_per[i],  "0.00",  "MPer"+(string)i,   90, y, 270, y+20)) return false;
-           if(!CreateLabel(m_lbl_mon_val[i],  "0.00",  "MVal"+(string)i,   145, y, 270, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_date[i], "Month", "MDate"+(string)i, x_h_col1, y, x_h_col1+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_per[i],  "0.00",  "MPer"+(string)i, x_h_col2, y, x_h_col2+50, y+20)) return false;
+           if(!CreateLabel(m_lbl_mon_val[i],  "0.00",  "MVal"+(string)i, x_h_col3, y, x_h_col3+50, y+20)) return false;
            y += 20;
        }
 
        y += 10;
+       if(!CreateLabel(m_lbl_h_yearly, "This Year", "HYearly", x_ly_col1, y-10, x2_ly_col1, y+10)) return false;
        // -- Separator -----------------------------
        y_sep = y;
-       if(!m_separator6.Create(m_chart_id, m_name+"Sep6", m_subwin, 10, y_sep, 420, y_sep+1)) return false;
-       if(!m_separator6.ColorBackground(C'60,60,60')) return false;
-       if(!Add(m_separator6)) return false;
+       if(!m_separator7.Create(m_chart_id, m_name+"Sep7", m_subwin, x2_ly_col1+10, y_sep, 370, y_sep+1)) return false;
+       if(!m_separator7.ColorBackground(C'60,60,60')) return false;
+       if(!Add(m_separator7)) return false;
 
        y += 10;
        // Yearly History (Current Year)
-       if(!CreateLabel(m_lbl_year_date, "Year", "YDate", 10, y, 90, y+20)) return false;
-       if(!CreateLabel(m_lbl_year_per,  "0.00", "YPer",  90, y, 270, y+20)) return false;
-       if(!CreateLabel(m_lbl_year_val,  "0.00", "YVal",  145, y, 270, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_date, "Year", "YDate", x_h_col1, y, x_h_col1+50, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_per,  "0.00", "YPer", x_h_col2, y, x_h_col2+50, y+20)) return false;
+       if(!CreateLabel(m_lbl_year_val,  "0.00", "YVal", x_h_col3, y, x_h_col3+50, y+20)) return false;
 
        return true;
    }
@@ -245,8 +269,8 @@ public:
       m_lbl_profit_val.Text(FormatNumber(profit));
       
       // Color Profit
-      if(profit >= 0) m_lbl_profit_val.Color(clrLime);
-      else m_lbl_profit_val.Color(clrRed);
+      if(profit >= 0) m_lbl_profit_val.Color(clrGain);
+      else m_lbl_profit_val.Color(clrLoss);
       
       // Update History
       UpdateHistory();
@@ -256,7 +280,7 @@ public:
    {
       double running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
 
-      // Loop from Today (0) backwards to 7 days ago
+      // --- Daily History (7 Days) ---
       for(int i=0; i<7; i++)
       {
          datetime t_start = iTime(_Symbol, PERIOD_D1, i);
@@ -342,14 +366,14 @@ public:
          
          // 4. Update Labels
          m_lbl_hist_date[i].Text(TimeToString(t_start, TIME_DATE));
-         m_lbl_hist_date[i].Color(C'180,180,180'); // Light Gray
-         m_lbl_hist_lot[i].Color(C'180,180,180');
-         m_lbl_hist_rebate[i].Color(C'180,180,180');
+         m_lbl_hist_date[i].Color(clrBase); // Light Gray
+         m_lbl_hist_lot[i].Color(clrBase);
+         m_lbl_hist_rebate[i].Color(clrBase);
 
          string valText = FormatNumber(day_profit);
          string perText = "(" + DoubleToString(percent, 2) + "%)";
-         string lotText = "Lot: " + FormatNumber(day_lot);
-         string rebateText = "Rebate: " + FormatNumber(day_lot);
+         string lotText = FormatNumber(day_lot);
+         string rebateText = FormatNumber(day_lot);
          m_lbl_hist_per[i].Text(perText);
          m_lbl_hist_val[i].Text(valText);
          m_lbl_hist_lot[i].Text(lotText);
@@ -357,18 +381,18 @@ public:
          
          if(day_profit > 0) 
          {
-            m_lbl_hist_per[i].Color(clrLime);
-            m_lbl_hist_val[i].Color(clrLime);
+            m_lbl_hist_per[i].Color(clrGain);
+            m_lbl_hist_val[i].Color(clrGain);
          }
          else if(day_profit < 0)
          {
-            m_lbl_hist_per[i].Color(clrRed);
-            m_lbl_hist_val[i].Color(clrRed);
+            m_lbl_hist_per[i].Color(clrLoss);
+            m_lbl_hist_val[i].Color(clrLoss);
          }
          else 
          {
-            m_lbl_hist_per[i].Color(C'180,180,180');
-            m_lbl_hist_val[i].Color(C'180,180,180');
+            m_lbl_hist_per[i].Color(clrBase);
+            m_lbl_hist_val[i].Color(clrBase);
          }
 
          // 5. Prepare balance for next iteration (yesterday)
@@ -377,7 +401,7 @@ public:
       
       double w_running_balance = AccountInfoDouble(ACCOUNT_BALANCE);
       
-      // Update Weekly History (4 Weeks)
+      // --- Weekly History (4 Weeks) ---
       for(int i=0; i<4; i++)
       {
          datetime w_start = iTime(_Symbol, PERIOD_W1, i);
@@ -442,15 +466,15 @@ public:
          if(w_base > 0) w_percent = (w_profit / w_base) * 100.0;
          
          m_lbl_week_date[i].Text(TimeToString(w_start, TIME_DATE));
-         m_lbl_week_date[i].Color(C'180,180,180');
+         m_lbl_week_date[i].Color(clrBase);
          
          m_lbl_week_val[i].Text(FormatNumber(w_profit));
          string w_perText = "(" + DoubleToString(w_percent, 2) + "%)";
          m_lbl_week_per[i].Text(w_perText);
          
-         if(w_profit > 0) { m_lbl_week_val[i].Color(clrLime); m_lbl_week_per[i].Color(clrLime); }
-         else if(w_profit < 0) { m_lbl_week_val[i].Color(clrRed); m_lbl_week_per[i].Color(clrRed); }
-         else { m_lbl_week_val[i].Color(C'180,180,180'); m_lbl_week_per[i].Color(C'180,180,180'); }
+         if(w_profit > 0) { m_lbl_week_val[i].Color(clrGain); m_lbl_week_per[i].Color(clrGain); }
+         else if(w_profit < 0) { m_lbl_week_val[i].Color(clrLoss); m_lbl_week_per[i].Color(clrLoss); }
+         else { m_lbl_week_val[i].Color(clrBase); m_lbl_week_per[i].Color(clrBase); }
          
          // Prepare for next iteration (previous week)
          w_running_balance = w_start_balance;
@@ -521,15 +545,15 @@ public:
          if(m_base > 0) m_percent = (m_profit / m_base) * 100.0;
          
          m_lbl_mon_date[i].Text(TimeToString(m_start, TIME_DATE));
-         m_lbl_mon_date[i].Color(C'180,180,180');
+         m_lbl_mon_date[i].Color(clrBase);
          
          m_lbl_mon_val[i].Text(FormatNumber(m_profit));
          string m_perText = "(" + DoubleToString(m_percent, 2) + "%)";
          m_lbl_mon_per[i].Text(m_perText);
          
-         if(m_profit > 0) { m_lbl_mon_val[i].Color(clrLime); m_lbl_mon_per[i].Color(clrLime); }
-         else if(m_profit < 0) { m_lbl_mon_val[i].Color(clrRed); m_lbl_mon_per[i].Color(clrRed); }
-         else { m_lbl_mon_val[i].Color(C'180,180,180'); m_lbl_mon_per[i].Color(C'180,180,180'); }
+         if(m_profit > 0) { m_lbl_mon_val[i].Color(clrGain); m_lbl_mon_per[i].Color(clrGain); }
+         else if(m_profit < 0) { m_lbl_mon_val[i].Color(clrLoss); m_lbl_mon_per[i].Color(clrLoss); }
+         else { m_lbl_mon_val[i].Color(clrBase); m_lbl_mon_per[i].Color(clrBase); }
          
          m_running_balance = m_start_balance;
       }
@@ -577,14 +601,14 @@ public:
       if(y_base > 0) y_percent = (y_profit / y_base) * 100.0;
       
       m_lbl_year_date.Text(TimeToString(y_start, TIME_DATE)); 
-      m_lbl_year_date.Color(C'180,180,180');
+      m_lbl_year_date.Color(clrBase);
       
       m_lbl_year_val.Text(FormatNumber(y_profit));
       m_lbl_year_per.Text("(" + DoubleToString(y_percent, 2) + "%)");
       
-      if(y_profit > 0) { m_lbl_year_val.Color(clrLime); m_lbl_year_per.Color(clrLime); }
-      else if(y_profit < 0) { m_lbl_year_val.Color(clrRed); m_lbl_year_per.Color(clrRed); }
-      else { m_lbl_year_val.Color(C'180,180,180'); m_lbl_year_per.Color(C'180,180,180'); }
+      if(y_profit > 0) { m_lbl_year_val.Color(clrGain); m_lbl_year_per.Color(clrGain); }
+      else if(y_profit < 0) { m_lbl_year_val.Color(clrLoss); m_lbl_year_per.Color(clrLoss); }
+      else { m_lbl_year_val.Color(clrBase); m_lbl_year_per.Color(clrBase); }
       
       // Cleanup old cache
       CleanupCachedHistory();
@@ -746,13 +770,24 @@ public:
       StyleLabel(m_lbl_max_dd_key, gray);
       StyleLabel(m_lbl_max_dd_val, C'255, 128, 128');
       StyleLabel(m_lbl_max_dd_per, C'255, 128, 128');
-      StyleLabel(m_lbl_date_dd, C'180,180,180');
+      StyleLabel(m_lbl_date_dd, clrBase);
+
+      StyleLabel(m_lbl_h_period, gray);
+      StyleLabel(m_lbl_h_gain, gray);
+      StyleLabel(m_lbl_h_profit, gray);
+      StyleLabel(m_lbl_h_lot, gray);
+      StyleLabel(m_lbl_h_rebate, gray);
+
+      StyleLabel(m_lbl_h_daily, C'128, 170, 255');
+      StyleLabel(m_lbl_h_weekly, C'128, 170, 255');
+      StyleLabel(m_lbl_h_monthly, C'128, 170, 255');
+      StyleLabel(m_lbl_h_yearly, C'128, 170, 255');
 
       // History Style
       for(int i=0; i<7; i++)
       {
          m_lbl_hist_date[i].ColorBackground(C'30,30,30');
-         m_lbl_hist_date[i].Color(C'180,180,180');
+         m_lbl_hist_date[i].Color(clrBase);
          
          m_lbl_hist_per[i].ColorBackground(C'30,30,30');
          m_lbl_hist_val[i].ColorBackground(C'30,30,30');
@@ -765,7 +800,7 @@ public:
       for(int i=0; i<4; i++)
       {
          m_lbl_week_date[i].ColorBackground(C'30,30,30');
-         m_lbl_week_date[i].Color(C'180,180,180');
+         m_lbl_week_date[i].Color(clrBase);
 
          m_lbl_week_per[i].ColorBackground(C'30,30,30');
          m_lbl_week_val[i].ColorBackground(C'30,30,30');
@@ -775,7 +810,7 @@ public:
       for(int i=0; i<2; i++)
       {
          m_lbl_mon_date[i].ColorBackground(C'30,30,30');
-         m_lbl_mon_date[i].Color(C'180,180,180');
+         m_lbl_mon_date[i].Color(clrBase);
 
          m_lbl_mon_per[i].ColorBackground(C'30,30,30');
          m_lbl_mon_val[i].ColorBackground(C'30,30,30');
@@ -783,10 +818,11 @@ public:
       
       // Yearly Style
       m_lbl_year_date.ColorBackground(C'30,30,30');
-      m_lbl_year_date.Color(C'180,180,180');
+      m_lbl_year_date.Color(clrBase);
       m_lbl_year_per.ColorBackground(C'30,30,30');
       m_lbl_year_val.ColorBackground(C'30,30,30');
    }
+   
    void StyleLabel(CLabel &lbl, color clr)
    {
       lbl.ColorBackground(C'30,30,30');
@@ -818,7 +854,8 @@ private:
    CLabel m_lbl_max_dd_key, m_lbl_max_dd_val, m_lbl_max_dd_per;
    CLabel m_lbl_clear_dd, m_lbl_date_dd;
 
-   CPanel m_separator,m_separator2,m_separator3,m_separator4;
+   CLabel m_lbl_h_period, m_lbl_h_gain, m_lbl_h_profit, m_lbl_h_lot, m_lbl_h_rebate;
+   CLabel m_lbl_h_daily, m_lbl_h_weekly, m_lbl_h_monthly, m_lbl_h_yearly;
    CLabel m_lbl_hist_date[7];
    CLabel m_lbl_hist_per[7];
    CLabel m_lbl_hist_val[7];
@@ -840,8 +877,8 @@ private:
    CLabel m_lbl_year_date;
    CLabel m_lbl_year_per;
    CLabel m_lbl_year_val;
-   
-   CPanel m_separator5, m_separator6;
+
+   CPanel m_separator,m_separator2,m_separator3,m_separator4,m_separator5,m_separator6,m_separator7;
    
 protected:
    ulong m_last_click_time;
@@ -855,12 +892,15 @@ protected:
 
 CSimplePanel AppWindow;
 
-
 int PanelX = 120;
 int PanelY = 20;
 int PanelMinX = 120;
 int PanelMinY = 20;
 bool CurrentStateMinimized = false;
+
+color clrBase = C'180,180,180';
+color clrGain = C'71, 209, 71';
+color clrLoss = C'255, 77, 77';
 
 int OnInit()
 {
@@ -881,7 +921,7 @@ int OnInit()
    int startY = CurrentStateMinimized ? PanelMinY : PanelY;
 
    // 5. Create Panel (Increased Height for Monthly/Yearly)
-   if(!AppWindow.Create(0,"Golden Hour",0,startX,startY,startX+430,startY+680))
+   if(!AppWindow.Create(0,"Golden Hour",0,startX,startY,startX+380,startY+680))
       return(INIT_FAILED);
       
    AppWindow.Run();
