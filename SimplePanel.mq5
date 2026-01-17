@@ -367,7 +367,7 @@ public:
          m_lbl_hist_val[i].Text(FormatNumber(d_p));
          m_lbl_hist_per[i].Text("(" + DoubleToString(per, 2) + "%)");
          m_lbl_hist_lot[i].Text(FormatNumber(d_l));
-         m_lbl_hist_rebate[i].Text(FormatNumber(d_l)); // Rebate logic same as lot for now
+         m_lbl_hist_rebate[i].Text(FormatNumber(d_l * 0.05)); // Rebate logic same as lot for now
          
          if(d_p > 0) { m_lbl_hist_val[i].Color(clrGain); m_lbl_hist_per[i].Color(clrGain); }
          else if(d_p < 0) { m_lbl_hist_val[i].Color(clrLoss); m_lbl_hist_per[i].Color(clrLoss); }
@@ -416,7 +416,7 @@ public:
          m_lbl_week_val[i].Text(FormatNumber(w_p));
          m_lbl_week_per[i].Text("(" + DoubleToString(per, 2) + "%)");
          m_lbl_week_lot[i].Text(FormatNumber(w_l));
-         m_lbl_week_rebate[i].Text(FormatNumber(w_l));
+         m_lbl_week_rebate[i].Text(FormatNumber(w_l * _rebate));
          
          if(w_p > 0) { m_lbl_week_val[i].Color(clrGain); m_lbl_week_per[i].Color(clrGain); }
          else if(w_p < 0) { m_lbl_week_val[i].Color(clrLoss); m_lbl_week_per[i].Color(clrLoss); }
@@ -464,7 +464,7 @@ public:
          m_lbl_mon_val[i].Text(FormatNumber(m_p));
          m_lbl_mon_per[i].Text("(" + DoubleToString(per, 2) + "%)");
          m_lbl_mon_lot[i].Text(FormatNumber(m_l));
-         m_lbl_mon_rebate[i].Text(FormatNumber(m_l));
+         m_lbl_mon_rebate[i].Text(FormatNumber(m_l * _rebate));
 
          if(m_p > 0) { m_lbl_mon_val[i].Color(clrGain); m_lbl_mon_per[i].Color(clrGain); }
          else if(m_p < 0) { m_lbl_mon_val[i].Color(clrLoss); m_lbl_mon_per[i].Color(clrLoss); }
@@ -500,7 +500,7 @@ public:
       m_lbl_year_val.Text(FormatNumber(y_p));
       m_lbl_year_per.Text("(" + DoubleToString(y_per, 2) + "%)");
       m_lbl_year_lot.Text(FormatNumber(y_l));
-      m_lbl_year_rebate.Text(FormatNumber(y_l));
+      m_lbl_year_rebate.Text(FormatNumber(y_l * _rebate));
       
       if(y_p > 0) { m_lbl_year_val.Color(clrGain); m_lbl_year_per.Color(clrGain); }
       else if(y_p < 0) { m_lbl_year_val.Color(clrLoss); m_lbl_year_per.Color(clrLoss); }
