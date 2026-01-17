@@ -677,6 +677,7 @@ public:
       // Weekly 0 (Partial)
       GlobalVariableSet("GH_PARTIAL_W_P", w_prof[0]); // Profit
       GlobalVariableSet("GH_PARTIAL_W_D", w_dep[0]); // Deposit
+      GlobalVariableSet("GH_PARTIAL_W_L", w_lot[0]); // Lot (Volume)
       
       // Monthly 1
       for(int k=1; k<2; k++) {
@@ -688,10 +689,12 @@ public:
       // Monthly 0 (Partial)
       GlobalVariableSet("GH_PARTIAL_M_P", m_prof[0]); 
       GlobalVariableSet("GH_PARTIAL_M_D", m_dep[0]); 
+      GlobalVariableSet("GH_PARTIAL_M_L", m_lot[0]);
       
       // Yearly (Partial)
       GlobalVariableSet("GH_PARTIAL_Y_P", y_prof); 
       GlobalVariableSet("GH_PARTIAL_Y_D", y_dep); 
+      GlobalVariableSet("GH_PARTIAL_Y_L", y_lot);
    }
 
    // Helper: Format number with commas
@@ -840,7 +843,9 @@ public:
          m_lbl_hist_per[i].ColorBackground(C'30,30,30');
          m_lbl_hist_val[i].ColorBackground(C'30,30,30');
          m_lbl_hist_lot[i].ColorBackground(C'30,30,30');
+         m_lbl_hist_lot[i].Color(clrBase);
          m_lbl_hist_rebate[i].ColorBackground(C'30,30,30');
+         m_lbl_hist_rebate[i].Color(clrBase);
          // Color handled dynamically
       }
       
@@ -852,6 +857,10 @@ public:
 
          m_lbl_week_per[i].ColorBackground(C'30,30,30');
          m_lbl_week_val[i].ColorBackground(C'30,30,30');
+         m_lbl_week_lot[i].ColorBackground(C'30,30,30');
+         m_lbl_week_lot[i].Color(clrBase);
+         m_lbl_week_rebate[i].ColorBackground(C'30,30,30');
+         m_lbl_week_rebate[i].Color(clrBase);
       }
       
       // Monthly Style
@@ -862,6 +871,10 @@ public:
 
          m_lbl_mon_per[i].ColorBackground(C'30,30,30');
          m_lbl_mon_val[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_lot[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_lot[i].Color(clrBase);
+         m_lbl_mon_rebate[i].ColorBackground(C'30,30,30');
+         m_lbl_mon_rebate[i].Color(clrBase);
       }
       
       // Yearly Style
@@ -869,6 +882,10 @@ public:
       m_lbl_year_date.Color(clrBase);
       m_lbl_year_per.ColorBackground(C'30,30,30');
       m_lbl_year_val.ColorBackground(C'30,30,30');
+      m_lbl_year_lot.ColorBackground(C'30,30,30');
+      m_lbl_year_lot.Color(clrBase);
+      m_lbl_year_rebate.ColorBackground(C'30,30,30');
+      m_lbl_year_rebate.Color(clrBase);
    }
    
    void StyleLabel(CLabel &lbl, color clr)
