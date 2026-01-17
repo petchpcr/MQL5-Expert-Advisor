@@ -1237,7 +1237,6 @@ color clrBase = C'180,180,180';
 color clrGain = C'71, 209, 71';
 color clrLoss = C'255, 77, 77';
 
-datetime dtToday, dt7DaysAgo, dt30DaysAgo, dt365DaysAgo;
 // ----- [Label]
 
 // ----- [Button]
@@ -1516,12 +1515,6 @@ void OnTick()
    // {
    //    return;
    // }
-
-   datetime curDate = StringToTime(TimeToString(TimeCurrent(), TIME_DATE));
-   dtToday = curDate;
-   dt7DaysAgo = curDate - 6 * 24 * 60 * 60;
-   dt30DaysAgo = curDate - 29 * 24 * 60 * 60;
-   dt365DaysAgo = curDate - 364 * 24 * 60 * 60;
 
    acc_balance = AccountInfoDouble(ACCOUNT_BALANCE);
    acc_profit = AccountInfoDouble(ACCOUNT_PROFIT);
