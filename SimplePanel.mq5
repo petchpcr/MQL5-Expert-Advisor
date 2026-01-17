@@ -53,6 +53,8 @@ public:
       if(!CreateLabel(m_lbl_band, "FB: Local FX", "BandKey", x1_key, y, x2_key, y+20)) return false;
       y += step;
       if(!CreateLabel(m_lbl_page, "www.facebook.com/LocalFX4U", "PageKey", x1_key, y, x2_key, y+20)) return false;
+      y = y-20;
+      if(!CreateLabel(m_lbl_status, "[BOOST]", "StatusKey", x1_key+295, y, x2_key, y+20)) return false;
       
       y = 60; // Reset for Data Section
 
@@ -309,11 +311,16 @@ public:
             double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
             double v = HistoryDealGetDouble(ticket, DEAL_VOLUME);
             long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+            long deal_entry = HistoryDealGetInteger(ticket, DEAL_ENTRY);
             
+            if(deal_entry == DEAL_ENTRY_IN)
+            {
+               t_lot += v;
+            }
+
             if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
             {
                t_prof += (p + s + c);
-               t_lot += v;
             }
             else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
             {
@@ -416,7 +423,7 @@ public:
          m_lbl_week_val[i].Text(FormatNumber(w_p));
          m_lbl_week_per[i].Text("(" + DoubleToString(per, 2) + "%)");
          m_lbl_week_lot[i].Text(FormatNumber(w_l));
-         m_lbl_week_rebate[i].Text(FormatNumber(w_l * _rebate));
+         m_lbl_week_rebate[i].Text(FormatNumber(w_l * 0.05));
          
          if(w_p > 0) { m_lbl_week_val[i].Color(clrGain); m_lbl_week_per[i].Color(clrGain); }
          else if(w_p < 0) { m_lbl_week_val[i].Color(clrLoss); m_lbl_week_per[i].Color(clrLoss); }
@@ -464,7 +471,7 @@ public:
          m_lbl_mon_val[i].Text(FormatNumber(m_p));
          m_lbl_mon_per[i].Text("(" + DoubleToString(per, 2) + "%)");
          m_lbl_mon_lot[i].Text(FormatNumber(m_l));
-         m_lbl_mon_rebate[i].Text(FormatNumber(m_l * _rebate));
+         m_lbl_mon_rebate[i].Text(FormatNumber(m_l * 0.05));
 
          if(m_p > 0) { m_lbl_mon_val[i].Color(clrGain); m_lbl_mon_per[i].Color(clrGain); }
          else if(m_p < 0) { m_lbl_mon_val[i].Color(clrLoss); m_lbl_mon_per[i].Color(clrLoss); }
@@ -500,7 +507,7 @@ public:
       m_lbl_year_val.Text(FormatNumber(y_p));
       m_lbl_year_per.Text("(" + DoubleToString(y_per, 2) + "%)");
       m_lbl_year_lot.Text(FormatNumber(y_l));
-      m_lbl_year_rebate.Text(FormatNumber(y_l * _rebate));
+      m_lbl_year_rebate.Text(FormatNumber(y_l * 0.05));
       
       if(y_p > 0) { m_lbl_year_val.Color(clrGain); m_lbl_year_per.Color(clrGain); }
       else if(y_p < 0) { m_lbl_year_val.Color(clrLoss); m_lbl_year_per.Color(clrLoss); }
@@ -609,15 +616,20 @@ public:
          double c = HistoryDealGetDouble(ticket, DEAL_COMMISSION);
          double v = HistoryDealGetDouble(ticket, DEAL_VOLUME);
          long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
+         long deal_entry = HistoryDealGetInteger(ticket, DEAL_ENTRY);
          
          double net_profit = 0;
          double net_deposit = 0;
          double net_lot = 0;
          
+         if(deal_entry == DEAL_ENTRY_IN)
+         {
+            net_lot = v;
+         }
+
          if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
          {
             net_profit = p + s + c;
-            net_lot = v;
          }
          else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
          {
@@ -776,6 +788,8 @@ public:
       m_lbl_page.Font("Segoe UI Bold");
       m_lbl_page.FontSize(11);
 
+      StyleLabel(m_lbl_status, C'255, 191, 128');
+
       StyleLabel(m_lbl_balance_key, gray);
       StyleLabel(m_lbl_balance_val, clrWhite);
       
@@ -895,7 +909,7 @@ public:
    }
    
 private:
-   CLabel m_lbl_band, m_lbl_page;
+   CLabel m_lbl_band, m_lbl_page, m_lbl_status;
 
    CLabel m_lbl_balance_key, m_lbl_balance_val;
    CLabel m_lbl_equity_key, m_lbl_equity_val;
