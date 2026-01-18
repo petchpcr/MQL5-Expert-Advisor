@@ -517,15 +517,15 @@ public:
       m_lbl_ord_buy_val.Text((string)countBuy);
       m_lbl_lot_buy_val.Text(FormatNumber(sumLotBuy));
       m_lbl_prof_buy_val.Text(FormatNumber(currentBuyProfit));
-      if(profit > 0) m_lbl_prof_buy_val.Color(clrGain);
-      else if(profit < 0) m_lbl_prof_buy_val.Color(clrLoss);
+      if(currentBuyProfit > 0) m_lbl_prof_buy_val.Color(clrGain);
+      else if(currentBuyProfit < 0) m_lbl_prof_buy_val.Color(clrLoss);
       else m_lbl_prof_buy_val.Color(clrWhite);
 
       m_lbl_ord_sell_val.Text((string)countSell);
       m_lbl_lot_sell_val.Text(FormatNumber(sumLotSell));
       m_lbl_prof_sell_val.Text(FormatNumber(currentSellProfit));
-      if(profit > 0) m_lbl_prof_sell_val.Color(clrGain);
-      else if(profit < 0) m_lbl_prof_sell_val.Color(clrLoss);
+      if(currentSellProfit > 0) m_lbl_prof_sell_val.Color(clrGain);
+      else if(currentSellProfit < 0) m_lbl_prof_sell_val.Color(clrLoss);
       else m_lbl_prof_sell_val.Color(clrWhite);
 
       m_lbl_cur_dd_val.Text(FormatNumber(curDrawDown));
@@ -568,23 +568,26 @@ public:
             double v = HistoryDealGetDouble(ticket, DEAL_VOLUME);
             long type = HistoryDealGetInteger(ticket, DEAL_TYPE);
             long deal_entry = HistoryDealGetInteger(ticket, DEAL_ENTRY);
-            
-            if(deal_entry == DEAL_ENTRY_IN)
+
+            if (HistoryDealGetString(ticket, DEAL_SYMBOL) == _Symbol)
             {
-               t_lot += v;
-            }
-            
-            if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
-            {
-               t_prof += (p + s + c);
-            }
-            else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
-            {
-               t_dep += p; 
-            }
-            else
-            {
-               t_prof += (p + s + c);
+               if(deal_entry == DEAL_ENTRY_IN)
+               {
+                  t_lot += v;
+               }
+               
+               if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+               {
+                  t_prof += (p + s + c);
+               }
+               else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
+               {
+                  t_dep += p; 
+               }
+               else
+               {
+                  t_prof += (p + s + c);
+               }
             }
          }
       }
@@ -877,52 +880,54 @@ public:
          double net_profit = 0;
          double net_deposit = 0;
          double net_lot = 0;
-         
-         if(deal_entry == DEAL_ENTRY_IN)
+         if (HistoryDealGetString(ticket, DEAL_SYMBOL) == _Symbol)
          {
-            net_lot = v;
-         }
+            if(deal_entry == DEAL_ENTRY_IN)
+            {
+               net_lot = v;
+            }
 
-         if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
-         {
-            net_profit = p + s + c;
-         }
-         else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
-         {
-            net_deposit = p;
-         }
-         else
-         {
-            net_profit = p + s + c;
-         }
+            if(type == DEAL_TYPE_BUY || type == DEAL_TYPE_SELL)
+            {
+               net_profit = p + s + c;
+            }
+            else if(type == DEAL_TYPE_BALANCE || type == DEAL_TYPE_CREDIT)
+            {
+               net_deposit = p;
+            }
+            else
+            {
+               net_profit = p + s + c;
+            }
 
-         // Bucket: Daily (1..6)
-         for(int k=1; k<7; k++) {
-             if(deal_time >= d_times[k] && deal_time < d_times[k-1]) {
-                 d_prof[k] += net_profit; d_dep[k] += net_deposit; d_lot[k] += net_lot; break;
-             }
-         }
-         
-         // Bucket: Weekly (0..3)
-         // Week 0 here means "This Week up to Yesterday"
-         for(int k=0; k<4; k++) {
-             datetime next_bound = (k==0) ? today_midnight : w_times[k-1]; 
-             if(deal_time >= w_times[k] && deal_time < next_bound) {
-                 w_prof[k] += net_profit; w_dep[k] += net_deposit; w_lot[k] += net_lot; break;
-             }
-         }
-         
-         // Bucket: Monthly (0..1)
-         for(int k=0; k<2; k++) {
-             datetime next_bound = (k==0) ? today_midnight : m_times[k-1];
-             if(deal_time >= m_times[k] && deal_time < next_bound) {
-                 m_prof[k] += net_profit; m_dep[k] += net_deposit; m_lot[k] += net_lot; break;
-             }
-         }
-         
-         // Bucket: Yearly (Current Year)
-         if(deal_time >= t_y_start && deal_time < today_midnight) {
-             y_prof += net_profit; y_dep += net_deposit;
+            // Bucket: Daily (1..6)
+            for(int k=1; k<7; k++) {
+               if(deal_time >= d_times[k] && deal_time < d_times[k-1]) {
+                  d_prof[k] += net_profit; d_dep[k] += net_deposit; d_lot[k] += net_lot; break;
+               }
+            }
+            
+            // Bucket: Weekly (0..3)
+            // Week 0 here means "This Week up to Yesterday"
+            for(int k=0; k<4; k++) {
+               datetime next_bound = (k==0) ? today_midnight : w_times[k-1]; 
+               if(deal_time >= w_times[k] && deal_time < next_bound) {
+                  w_prof[k] += net_profit; w_dep[k] += net_deposit; w_lot[k] += net_lot; break;
+               }
+            }
+            
+            // Bucket: Monthly (0..1)
+            for(int k=0; k<2; k++) {
+               datetime next_bound = (k==0) ? today_midnight : m_times[k-1];
+               if(deal_time >= m_times[k] && deal_time < next_bound) {
+                  m_prof[k] += net_profit; m_dep[k] += net_deposit; m_lot[k] += net_lot; break;
+               }
+            }
+            
+            // Bucket: Yearly (Current Year)
+            if(deal_time >= t_y_start && deal_time < today_midnight) {
+               y_prof += net_profit; y_dep += net_deposit;
+            }
          }
       }
       
@@ -1098,6 +1103,14 @@ public:
       StyleLabel(m_lbl_h_weekly, C'128, 170, 255');
       StyleLabel(m_lbl_h_monthly, C'128, 170, 255');
       StyleLabel(m_lbl_h_yearly, C'128, 170, 255');
+
+      m_separator.ColorBorder(C'60,60,60');
+      m_separator2.ColorBorder(C'60,60,60');
+      m_separator3.ColorBorder(C'60,60,60');
+      m_separator4.ColorBorder(C'60,60,60');
+      m_separator5.ColorBorder(C'60,60,60');
+      m_separator6.ColorBorder(C'60,60,60');
+      m_separator7.ColorBorder(C'60,60,60');
 
       // History Style
       for(int i=0; i<7; i++)
@@ -2029,6 +2042,14 @@ bool CloseSideIfTargetReached()
       return false;
    }
 
+   MqlTick         tick;
+
+   if(!SymbolInfoTick(_Symbol, tick))
+   {
+      Print("CST: Failed to get tick");
+      return false;
+   }
+
    const int total = PositionsTotal();
 
    for (int i = total - 1; i >= 0; i--)
@@ -2177,7 +2198,7 @@ void OpenPairOrders(const double lot_buy, const double lot_sell)
 
    if(!SymbolInfoTick(_Symbol, tick))
    {
-      Print("Failed to get tick");
+      Print("OPO: Failed to get tick");
       return;
    }
 
@@ -2218,7 +2239,7 @@ void OpenSingleOrder(ENUM_ORDER_TYPE type, double lot)
 
    if(!SymbolInfoTick(_Symbol, tick))
    {
-      Print("Failed to get tick");
+      Print("OSO: Failed to get tick");
       return;
    }
    

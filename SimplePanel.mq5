@@ -885,6 +885,14 @@ public:
       StyleLabel(m_lbl_h_monthly, C'128, 170, 255');
       StyleLabel(m_lbl_h_yearly, C'128, 170, 255');
 
+      m_separator.ColorBorder(C'60,60,60');
+      m_separator2.ColorBorder(C'60,60,60');
+      m_separator3.ColorBorder(C'60,60,60');
+      m_separator4.ColorBorder(C'60,60,60');
+      m_separator5.ColorBorder(C'60,60,60');
+      m_separator6.ColorBorder(C'60,60,60');
+      m_separator7.ColorBorder(C'60,60,60');
+
       // History Style
       for(int i=0; i<7; i++)
       {
