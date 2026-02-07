@@ -117,16 +117,18 @@ input AccCurrency Acc_Currency = CNT; // ประเภทบัญชี
 
 const input string _____Trading_____ = "============ Trading ============";
 input InpTimeframe Time_frame = TF_20M; // ออกออเดอร์ทุกๆ นาที/ชั่วโมง/...
+input Switcher Allow_Buy = ON;          // เปิดฝั่ง Buy
+input Switcher Allow_Sell = ON;         // เปิดฝั่ง Sell
 input double Lot_Size = 0.01;           // ขนาด Lot
-input double Target = 2.0;             // Target
+input double Target = 2.0;              // Target
 
 const input string _____Boost_____ = "=========== Boost mode ===========";
-input Switcher Boost_MODE = OFF;   // เพิ่ม lot size ในช่วงปลอดภัย
+input Switcher Boost_MODE = ON;   // เพิ่ม lot size ในช่วงปลอดภัย
 input RiskLevel Risk_level = Low; // ระดับความเสี่ยงที่รับได้
 bool isBoost = false;
 
 const input string _____Safe_____ = "=========== Safe mode ============";
-input Switcher Safe_MODE = OFF; // ช่วยลด DD เมื่อโดนลาก
+input Switcher Safe_MODE = ON; // ช่วยลด DD เมื่อโดนลาก
 input int Safe_DD = 20;         // เปิด Safe mode เมื่อมี Draw Down ถึง ... %
 double Safe_DD_per = 0;
 double Safe_min_DD = 0;
@@ -153,7 +155,7 @@ const input string _____Notification_____ = "=========== Notification ==========
 input Switcher Notify_App = OFF;    // แจ้งเตือนผ่าน MT5 ในมือถือ
 input Switcher Notify_Email = OFF;  // แจ้งเตือนผ่าน Email
 input Notify Notify_Timer = NTF_1H; // แจ้งเตือนทุกๆ นาที,ชั่วโมง
-input int Notify_DD = 0;            // แจ้งเตือนเมื่อ Draw Down ถึง ... %
+input int Notify_DD = 50;            // แจ้งเตือนเมื่อ Draw Down ถึง ... %
 double Notify_DD_per = 0;
 input int Notify_Orders = 0; // แจ้งเตือนเมื่อจำนวน Order ถึง ...
 
@@ -2170,7 +2172,11 @@ void CheckAndOpenOrders()
       }
    }
 
-   // Print("DEBUG: OpenPairOrders(_lot) called");
+   if(!Allow_Buy && !Allow_Sell)
+   {
+      return;
+   }
+   
    if (Martingel_MODE && (countBuy >= Martingel_at || countSell >= Martingel_at))
    {
       MartingelCondition();
@@ -2202,33 +2208,39 @@ void OpenPairOrders(const double lot_buy, const double lot_sell)
       return;
    }
 
-   ZeroMemory(request);
-   ZeroMemory(result);
-   request.action = TRADE_ACTION_DEAL;
-   request.symbol = _Symbol;
-   request.volume = lot_buy;
-   request.deviation = 5;
-   request.type = ORDER_TYPE_BUY;
-   request.price = NormalizeDouble(tick.ask, _Digits);
-   request.type_filling = ORDER_FILLING_IOC;
-   request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
-   if (!OrderSend(request, result))
-      PrintFormat("Buy OrderSend failed. retcode=%d comment=%s",
-                  result.retcode, result.comment);
+   if(Allow_Buy)
+   {
+      ZeroMemory(request);
+      ZeroMemory(result);
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = lot_buy;
+      request.deviation = 5;
+      request.type = ORDER_TYPE_BUY;
+      request.price = NormalizeDouble(tick.ask, _Digits);
+      request.type_filling = ORDER_FILLING_IOC;
+      request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
+      if (!OrderSend(request, result))
+         PrintFormat("Buy OrderSend failed. retcode=%d comment=%s",
+                     result.retcode, result.comment);
+   }
 
-   ZeroMemory(request);
-   ZeroMemory(result);
-   request.action = TRADE_ACTION_DEAL;
-   request.symbol = _Symbol;
-   request.volume = lot_sell;
-   request.deviation = 5;
-   request.type = ORDER_TYPE_SELL;
-   request.price = NormalizeDouble(tick.bid, _Digits);
-   request.type_filling = ORDER_FILLING_IOC;
-   request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
-   if (!OrderSend(request, result))
-      PrintFormat("Sell OrderSend failed. retcode=%d comment=%s",
-                  result.retcode, result.comment);
+   if(Allow_Sell)
+   {
+      ZeroMemory(request);
+      ZeroMemory(result);
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = lot_sell;
+      request.deviation = 5;
+      request.type = ORDER_TYPE_SELL;
+      request.price = NormalizeDouble(tick.bid, _Digits);
+      request.type_filling = ORDER_FILLING_IOC;
+      request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
+      if (!OrderSend(request, result))
+         PrintFormat("Sell OrderSend failed. retcode=%d comment=%s",
+                     result.retcode, result.comment);
+   }
 }
 
 void OpenSingleOrder(ENUM_ORDER_TYPE type, double lot)
