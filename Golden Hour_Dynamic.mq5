@@ -118,12 +118,10 @@ input AccCurrency Acc_Currency = CNT; // ประเภทบัญชี
 const input string _____Trading_____ = "============ Trading ============";
 input InpTimeframe Time_frame = TF_20M; // ออกออเดอร์ทุกๆ นาที/ชั่วโมง/...
 input double Lot_Size = 0.01;           // ขนาด Lot
-input double Target = 2.0;             // Target
-
-const input string _____Dynamic_____ = "============ Dynamic Lot ============";
-input Switcher Dynamic_MODE = OFF;   // ปรับ Lot size ตามเงินทุน 
-input int Dynamic_Capital = 20000; // Scale ของ เงินทุน
-input double Dynamic_Lot = 0.01;   // Scale ของ Lot size 
+input double Target = 2.0;              // Target
+input int Adaptive_Capital = 20000;  // ปรับ Lot/Target อัตโนมัติ ทุกๆเงินทุน...
+double Cur_Lot = 0;
+double Cur_Target = 0;
 
 const input string _____Boost_____ = "=========== Boost mode ===========";
 input Switcher Boost_MODE = OFF;   // เพิ่ม lot size ในช่วงปลอดภัย
@@ -163,7 +161,7 @@ double Notify_DD_per = 0;
 input int Notify_Orders = 0; // แจ้งเตือนเมื่อจำนวน Order ถึง ...
 
 const input string _____UI_Position_____ = "============ UI Setting ============";
-input int InpPanelX = 1500; // ตำแน่งเริ่มต้นของ UI แนวนอน
+input int InpPanelX = 1400; // ตำแน่งเริ่มต้นของ UI แนวนอน
 input int InpPanelY = 20;  // ตำแน่งเริ่มต้นของ UI แนวตั้ง
 
 Position Button_Position = TOP_RIGHT;    // ตำแหน่งของปุ่ม
@@ -1487,6 +1485,8 @@ int OnInit()
    _rebate = Acc_Rebate / Acc_Currency;
    point_avg = _Point * PipAdjust;
    isBoost = Boost_MODE;
+   Cur_Lot = Lot_Size;
+   Cur_Target = Target;
 
    CreateAverageLine();
 
@@ -1550,6 +1550,7 @@ void OnTick()
    _ask = SymbolInfoDouble(_symbol, SYMBOL_ASK);
    _bid = SymbolInfoDouble(_symbol, SYMBOL_BID);
 
+   AdaptiveScale();
    AverageSpread();
    ResetProfitParams();
    UpdateTotalsInPoints();
@@ -1852,6 +1853,17 @@ void UpdateAverageLine()
 //| Trading functions                                                |
 //+------------------------------------------------------------------+
 // ----- [Trading]
+void AdaptiveScale()
+{
+   if(Adaptive_Capital > 0)
+   {
+      int num = (int)MathFloor(acc_balance / (double)Adaptive_Capital);
+      
+      Cur_Lot = num > 0 ? Lot_Size * num : Lot_Size;
+      Cur_Target = num > 0 ? Target * num : Target;
+   }
+}
+
 bool CheckSafeMode()
 {
    if(Safe_Type != "")
@@ -1972,7 +1984,7 @@ void UpdateTotalsInPoints()
       bottom_price = bottom_price == 0 ? price : price < bottom_price ? price
                                                                       : bottom_price;
 
-      if (volume > Lot_Size)
+      if (volume > Cur_Lot)
       {
          Stack_biglot++;
       }
@@ -2014,8 +2026,8 @@ void UpdateTotalsInPoints()
 
 bool CloseSideIfTargetReached()
 {
-   bool closeBuys = (currentBuyProfit >= Target);
-   bool closeSells = (currentSellProfit >= Target);
+   bool closeBuys = (currentBuyProfit >= Cur_Target);
+   bool closeSells = (currentSellProfit >= Cur_Target);
 
    if(isBoost)
    {
@@ -2114,7 +2126,7 @@ bool CloseTargetSafeMode()
       diff_profit = SafeBuyProfit + SafeSumLoss;
    }
 
-   if(diff_profit >= Target)
+   if(diff_profit >= Cur_Target)
    {
       int safe_removed = 0;
 
@@ -2182,13 +2194,13 @@ void CheckAndOpenOrders()
    }
    else
    {
-      double Lot_buy = Lot_Size;
-      double Lot_sell = Lot_Size;
-
+      double Lot_buy = Cur_Lot;
+      double Lot_sell = Cur_Lot;
+      Print("Cur_Lot = ",Cur_Lot);
       if(isBoost)
       {
-         Lot_buy = countBuy < 15 ? Lot_Size * Risk_level : Lot_Size;
-         Lot_sell = countSell < 15 ? Lot_Size * Risk_level : Lot_Size;
+         Lot_buy = countBuy < 15 ? Cur_Lot * Risk_level : Cur_Lot;
+         Lot_sell = countSell < 15 ? Cur_Lot * Risk_level : Cur_Lot;
       }
 
       OpenPairOrders(Lot_buy, Lot_sell);
@@ -2292,10 +2304,10 @@ void MartingelCondition()
       }
       else
       {
-         OpenSingleOrder(ORDER_TYPE_BUY, Lot_Size);
+         OpenSingleOrder(ORDER_TYPE_BUY, Cur_Lot);
       }
 
-      OpenSingleOrder(ORDER_TYPE_SELL, Lot_Size);
+      OpenSingleOrder(ORDER_TYPE_SELL, Cur_Lot);
    }
 
    if (countSell >= Martingel_at)
@@ -2316,10 +2328,10 @@ void MartingelCondition()
       }
       else
       {
-         OpenSingleOrder(ORDER_TYPE_SELL, Lot_Size);
+         OpenSingleOrder(ORDER_TYPE_SELL, Cur_Lot);
       }
 
-      OpenSingleOrder(ORDER_TYPE_BUY, Lot_Size);
+      OpenSingleOrder(ORDER_TYPE_BUY, Cur_Lot);
    }
 }
 
@@ -2435,7 +2447,7 @@ double CalculateBigLot(string type)
 {
    double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
    double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   double newLot = Lot_Size;
+   double newLot = Cur_Lot;
    double minLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
    double step_lot = minLot;
 
