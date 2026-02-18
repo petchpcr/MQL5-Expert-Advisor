@@ -119,6 +119,9 @@ const input string _____Trading_____ = "============ Trading ============";
 input InpTimeframe Time_frame = TF_20M; // ออกออเดอร์ทุกๆ นาที/ชั่วโมง/...
 input double Lot_Size = 0.01;           // ขนาด Lot
 input double Target = 2.0;             // Target
+input int Adaptive_Capital = 20000;  // ปรับ Lot/Target อัตโนมัติ ทุกๆเงินทุน...
+double Cur_Lot = 0;
+double Cur_Target = 0;
 
 const input string _____Boost_____ = "=========== Boost mode ===========";
 input Switcher Boost_MODE = OFF;   // เพิ่ม lot size ในช่วงปลอดภัย
@@ -131,6 +134,9 @@ input int Safe_DD = 20;         // เปิด Safe mode เมื่อมี 
 double Safe_DD_per = 0;
 double Safe_min_DD = 0;
 string Safe_Type = "";
+double Hedge_Lot = 0;
+int ClearSafe = 10;
+int LimitDiffOrders = 30;
 
 const string _____Auto_Remove_Order_____ = "======== Auto Remove Order ========";
 Switcher Auto_Remove = OFF; // โหมดปิดออเดอร์อัตโนมัติ (เฉพาะออเดอร์ที่ปิดได้)
@@ -142,13 +148,6 @@ const input string _____Limit_Order_____ = "=========== Limit Order ==========="
 input Switcher Limit_Order = OFF; // จำกัดการออกออเดอร์
 input int LimitAmount = 500;        // เมื่อถึงจำนวน ... ไม้ จะไม่ออกออเดอร์เพิ่ม
 
-const string _____Martingel_____ = "=========== Martingel ===========";
-Switcher Martingel_MODE = OFF; // โหมด Martingel
-int Martingel_at = 100;        // Martingel เมื่อ Buy หรือ Sell ถึงจำนวน ... ไม้
-double Limit_lot_size = 10.00; // กำหนด Lot size สูงสุดที่จะออกได้
-double Avg_dist_should_be = 0;
-int Avg_start_mtgl = 0;
-
 const input string _____Notification_____ = "=========== Notification ==========";
 input Switcher Notify_App = OFF;    // แจ้งเตือนผ่าน MT5 ในมือถือ
 input Switcher Notify_Email = OFF;  // แจ้งเตือนผ่าน Email
@@ -158,7 +157,7 @@ double Notify_DD_per = 0;
 input int Notify_Orders = 0; // แจ้งเตือนเมื่อจำนวน Order ถึง ...
 
 const input string _____UI_Position_____ = "============ UI Setting ============";
-input int InpPanelX = 1500; // ตำแน่งเริ่มต้นของ UI แนวนอน
+input int InpPanelX = 1400; // ตำแน่งเริ่มต้นของ UI แนวนอน
 input int InpPanelY = 20;  // ตำแน่งเริ่มต้นของ UI แนวตั้ง
 
 Position Button_Position = TOP_RIGHT;    // ตำแหน่งของปุ่ม
@@ -1284,12 +1283,13 @@ int      count_spread         = 0;
 datetime spread_date          = 0;
 // ----- [Spread]
 
-// ----- [Average]
+// ----- [Average Line]
 // Normal
 bool show_avg_line = false;
 int font_info_size = 12;
 int PipAdjust;
-double point_avg;
+double point_avg, top_price, bottom_price, middle_price, range_price, Cur_avg_diff;
+
 // Buy
 string avgSell = "Sell_avg_line_" + _Symbol;
 string infoSell = "Sell_info_" + _Symbol;
@@ -1302,17 +1302,12 @@ string infoBuy = "Buy_info_" + _Symbol;
 int sell_line_width = 3;
 color sell_line_color = Red;
 double Average_sell_price = 0;
-// ----- [Average]
-
-// ----- [Martingel]
-double top_price, bottom_price, middle_price, range_price, lock_range, Cur_avg_diff, maxLot;
-int Stack_biglot, Highest_stack;
-// ----- [Martingel]
+// ----- [Average Line]
 
 // ----- [Auto Close]
 struct KeyValue
 {
-   int ticket;
+   long ticket;
    int type;
    double lotsize;
    double price;
@@ -1320,7 +1315,7 @@ struct KeyValue
    double swap;
 };
 
-void AddKeyValue(KeyValue &arr[], int ticket, int type, double lotsize, double price, double profit, double swap)
+void AddKeyValue(KeyValue &arr[], long ticket, int type, double lotsize, double price, double profit, double swap)
 {
    int size = ArraySize(arr);  // หาขนาดอาเรย์ปัจจุบัน
    ArrayResize(arr, size + 1); // ขยายอาเรย์เพิ่ม 1 ช่อง
@@ -1337,12 +1332,23 @@ KeyValue arrLoss[];
 KeyValue arrProfit[];
 KeyValue arrDelete[];
 
+KeyValue arrBuy[];
+KeyValue arrSell[];
+
 // ----- [Safe Mode]
 KeyValue arrSafeLoss[];
 KeyValue arrSafeProfit[];
-double SafeSumLoss = 0;
+double SafeFloatCount = 0;
+double SafeFloatLots = 0;
+double SafeFloatProfit = 0;
+double SafeMinLoss = 0;
+
 double SafeBuyProfit = 0;
 double SafeSellProfit = 0;
+int cntSafeBuyProfit = 0;
+int cntSafeSellProfit = 0;
+int order_left = 0;
+double min_loss = 0;
 // ----- [Safe Mode]
 
 int MustRemove = 0;
@@ -1482,6 +1488,8 @@ int OnInit()
    _rebate = Acc_Rebate / Acc_Currency;
    point_avg = _Point * PipAdjust;
    isBoost = Boost_MODE;
+   Cur_Lot = Lot_Size;
+   Cur_Target = Target;
 
    CreateAverageLine();
 
@@ -1528,7 +1536,6 @@ void OnTick()
    // {
    //    return;
    // }
-
    acc_balance = AccountInfoDouble(ACCOUNT_BALANCE);
    acc_profit = AccountInfoDouble(ACCOUNT_PROFIT);
 
@@ -1545,12 +1552,14 @@ void OnTick()
    _ask = SymbolInfoDouble(_symbol, SYMBOL_ASK);
    _bid = SymbolInfoDouble(_symbol, SYMBOL_BID);
 
+   AdaptiveScale();
    AverageSpread();
    ResetProfitParams();
    UpdateTotalsInPoints();
+   CheckArrHedge();
    NotifyFeatures();
    if(!CurrentStateMinimized) AppWindow.UpdateData();
-   UpdateAverageLine();
+   // UpdateAverageLine();
    ShowComment();
    // return;
 
@@ -1559,22 +1568,55 @@ void OnTick()
       return;
    }
 
-   if(!isBoost)
+   const ENUM_TIMEFRAMES currentTf = (ENUM_TIMEFRAMES)Time_frame;
+   const datetime currentBarOpen = iTime(_Symbol, currentTf, 0);
+   const datetime lastOrderOpen = GetLatestOrderOpenTime();
+   bool newCandle = !(lastOrderOpen >= currentBarOpen);
+
+   // Close session
+   if(Safe_MODE && Safe_Type != "")
    {
-      if (CloseSideIfTargetReached())
+      if(newCandle)// Wait new candle
       {
-         return;
+         // bool con1 = (Safe_Type == "buy") && isBetween("Buttom_Sell");
+         // bool con2 = (Safe_Type == "sell") && isBetween("Top_Buy");
+         // if(con1 || con2)
+         if(true)
+         {
+            // Close : Safe
+            if(CloseTargetSafeModeOG())
+               return;
+         } 
+         // else 
+         // {
+         //    // Close : Mormal
+         //    if(CloseTargetNormal())
+         //       return;
+         // }
       }
    }
-
-   if (totalOrders >= Remove_At && FNC_Auto_Remove)
+   else if(isBoost)
    {
-      AutomaticCloseOrders();
+      if(newCandle)// Wait new candle
+      {
+         // Close : Mormal
+         if(CloseTargetNormal())
+            return;
+      }
+   } else {
+      // Close : Mormal
+      if(CloseTargetNormal())
+         return;
    }
 
+
+   // Open session
    if (!(Limit_Order && totalOrders >= LimitAmount))
    {
-      CheckAndOpenOrders();
+      if(newCandle)// Wait new candle
+      {
+         CheckAndOpenOrders();
+      }
    }
 }
 
@@ -1800,16 +1842,6 @@ void UpdateAverageLine()
    {
       // update avg line
       ObjectSetDouble(0, avgBuy, OBJPROP_PRICE, Average_buy_price);
-
-      // // update text info
-      // ObjectCreate(0, infoBuy, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_buy_price);
-      // ObjectSetString(0, infoBuy, OBJPROP_TEXT,
-      //                 StringFormat("[B]= %.*f | %.1f pips (%.2f %s) Lots= %.2f Orders= %d",
-      //                              _digits, Average_buy_price,
-      //                              Buy_distance / point_avg,
-      //                              currentBuyProfit,
-      //                              AccountInfoString(ACCOUNT_CURRENCY),
-      //                              sumLotBuy, countBuy));
    }
 
    // --- Avg Sell
@@ -1824,16 +1856,6 @@ void UpdateAverageLine()
    {
       // update avg line
       ObjectSetDouble(0, avgSell, OBJPROP_PRICE, Average_sell_price);
-
-      // // update text info
-      // ObjectCreate(0, infoSell, OBJ_TEXT, 0, iTime(_Symbol, PERIOD_CURRENT, 0), Average_sell_price);
-      // ObjectSetString(0, infoSell, OBJPROP_TEXT,
-      //                 StringFormat("[S]= %.*f | %.1f pips (%.2f %s) Lots= %.2f Orders= %d",
-      //                              _digits, Average_sell_price,
-      //                              Sell_distance / point_avg,
-      //                              currentSellProfit,
-      //                              AccountInfoString(ACCOUNT_CURRENCY),
-      //                              sumLotSell, countSell));
    }
 
    double dummy_avg_buy = Average_buy_price <= 0 ? _bid : Average_buy_price;
@@ -1847,24 +1869,80 @@ void UpdateAverageLine()
 //| Trading functions                                                |
 //+------------------------------------------------------------------+
 // ----- [Trading]
+void AdaptiveScale()
+{
+   if(Adaptive_Capital > 0)
+   {
+      int num = (int)MathFloor(acc_balance / (double)Adaptive_Capital);
+      
+      Cur_Lot = num > 0 ? Lot_Size * num : Lot_Size;
+      Cur_Target = num > 0 ? Target * num : Target;
+   }
+}
+
+bool CheckSafeModeV2()
+{
+   double Buy_Per = (currentBuyProfit / acc_balance) * 100;
+   double Sell_Per = (currentSellProfit / acc_balance) * 100;
+
+   bool net_dd = curDD_Per <= Safe_DD_per && Safe_DD > 0;
+   bool buy_dd = Buy_Per <= Safe_DD_per && Safe_DD > 0;
+   bool sell_dd = Sell_Per <= Safe_DD_per && Safe_DD > 0;
+
+   bool res = false;
+
+   if(net_dd || buy_dd || sell_dd)
+   {
+      Hedge_Lot = sumLotSell - (Cur_Lot * ClearSafe);
+      res = true;
+   } 
+   
+   if(res)
+   {
+      if(Buy_Per <= Sell_Per)
+      {
+         Safe_Type = "buy";
+         Hedge_Lot = sumLotBuy - (Cur_Lot * ClearSafe);
+      } else if(Sell_Per < Buy_Per)
+      {
+         Safe_Type = "sell";
+         Hedge_Lot = sumLotSell - (Cur_Lot * ClearSafe);
+      }
+   } 
+   else {
+      Safe_Type = "";
+      Hedge_Lot = 0;
+   }
+   return res;
+}
+
 bool CheckSafeMode()
 {
-   if(Safe_Type != "")
-   {
-      if(curDD_Per >= Safe_min_DD) 
-      {
-         Safe_Type = "";
-         return false;
-      }
-      return true;
+   double Buy_Per = (currentBuyProfit / acc_balance) * 100;
+   double Sell_Per = (currentSellProfit / acc_balance) * 100;
 
-   } else {
-      if (curDD_Per <= Safe_DD_per && Safe_DD > 0)
+   if(currentBuyProfit <= currentSellProfit)
+   {
+      if(Buy_Per <= Safe_DD_per && Safe_DD > 0)
       {
+         Safe_Type = "buy";
+         Hedge_Lot = sumLotBuy - (Cur_Lot * ClearSafe);
          return true;
-      } 
-      return false;
+      }
+   } 
+   if(currentSellProfit < currentBuyProfit)
+   {
+      if(Sell_Per <= Safe_DD_per && Safe_DD > 0)
+      {
+         Safe_Type = "sell";
+         Hedge_Lot = sumLotSell - (Cur_Lot * ClearSafe);
+         return true;
+      }
    }
+   
+   Safe_Type = "";
+   Hedge_Lot = 0;
+   return false;
 }
 
 double GetPositionCommission(long position_id)
@@ -1892,9 +1970,7 @@ double GetPositionCommission(long position_id)
 void UpdateTotalsInPoints()
 {
    const int total = PositionsTotal();
-
-   bool OpenSafeMode = Safe_MODE ? CheckSafeMode() : false;
-   isBoost = OpenSafeMode ? false : Boost_MODE;
+   bool findHedge = false;
 
    //--- open positions
    for (int i = 0; i < total; i++)
@@ -1912,46 +1988,52 @@ void UpdateTotalsInPoints()
       // double posProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP) + GetPositionCommission(posID);
       double posProfit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
       double volume = PositionGetDouble(POSITION_VOLUME);
-
+      
       // loss (-)
       if (posProfit < 0)
       {
          highest_loss = highest_loss == 0 ? posProfit : posProfit < highest_loss ? posProfit
                                                                                  : highest_loss;
-         if(OpenSafeMode)
-         {
-            int posTicket = (int)ticket;
-            InsertArraySorted(arrSafeLoss, "ASC", posTicket, (int)type, volume, price, posProfit, PositionGetDouble(POSITION_SWAP));
-         }
       }
       // profit (+)
       else if (posProfit > 0)
       {
          highest_profit = highest_profit == 0 ? posProfit : posProfit > highest_profit ? posProfit
                                                                                        : highest_profit;
-         if(OpenSafeMode)
-         {
-            int posTicket = (int)ticket;
-            AddKeyValue(arrSafeProfit, posTicket, (int)type, volume, price, posProfit, PositionGetDouble(POSITION_SWAP));
-            if (type == POSITION_TYPE_BUY)
-            {
-               SafeBuyProfit += posProfit;
-            } 
-            else if (type == POSITION_TYPE_SELL)
-            {
-               SafeSellProfit += posProfit;
-            }
-         }
       }
 
       if (type == POSITION_TYPE_BUY)
       {
+         for (int x = ArraySize(arrBuy) - 1; x >= 0; x--)
+         {
+            if(arrBuy[x].ticket == ticket)
+               arrBuy[x].profit = posProfit;
+         }
+
+         if (posProfit > 0) 
+            SafeBuyProfit += posProfit;
+            cntSafeBuyProfit++;
+
+         // top_price = top_price == 0 ? price : price > top_price ? price
+         //                                                     : top_price;
          sumLotBuy += volume;
          currentBuyProfit += posProfit;
          countBuy++;
       }
       else if (type == POSITION_TYPE_SELL)
       {
+         for (int x = ArraySize(arrSell) - 1; x >= 0; x--)
+         {
+            if(arrSell[x].ticket == ticket)
+               arrSell[x].profit = posProfit;
+         }
+
+         if (posProfit > 0) 
+            SafeSellProfit += posProfit;
+            cntSafeSellProfit++;
+
+         // bottom_price = bottom_price == 0 ? price : price < bottom_price ? price
+         //                                                              : bottom_price;
          sumLotSell += volume;
          currentSellProfit += posProfit;
          countSell++;
@@ -1960,83 +2042,164 @@ void UpdateTotalsInPoints()
       TotalLot += volume;
       totalOrders++;
 
-      // --- Martingel IN Loop
-      maxLot = volume > maxLot ? volume : maxLot;
+      // --- Average Line & Price [In Loop]
       top_price = top_price == 0 ? price : price > top_price ? price
                                                              : top_price;
       bottom_price = bottom_price == 0 ? price : price < bottom_price ? price
                                                                       : bottom_price;
-
-      if (volume > Lot_Size)
-      {
-         Stack_biglot++;
-      }
    }
 
    // --- Casual
    NetProfitTotal = currentBuyProfit + currentSellProfit;
 
-   // --- Safe Mode
-   if(OpenSafeMode)
-   {
-      if(countBuy > countSell)
-      {
-         Safe_Type = "buy";
-      } 
-      else if(countSell > countBuy)
-      {
-         Safe_Type = "sell";
-      }
+   // --- Average Line & Price [Out Loop]
+   middle_price = (top_price + bottom_price) / 2;
+   range_price = (top_price - bottom_price) / _point;
 
-      ArrayResize(arrSafeLoss, 20);
-      for (int i = 0; i < ArraySize(arrSafeLoss); i++)
+   UpdateAverageLine();
+
+   // --- Safe Mode
+   bool OpenSafeMode = Safe_MODE ? CheckSafeModeV2() : false;
+   isBoost = OpenSafeMode ? false : Boost_MODE;
+
+   if(!OpenSafeMode)
+   {
+      return;
+   }
+
+   int dm_cnt = 0;
+   double dm_loss = 0;
+   if(Safe_Type == "buy")
+   {
+      // Collect Min Loss (-)
+      for (int x = 0; x < ArraySize(arrBuy); x++)
       {
-         SafeSumLoss += arrSafeLoss[i].profit;
+         if(arrBuy[x].profit > 0) continue;
+
+         double _loss = dm_loss + arrBuy[x].profit;
+         int _cnt = (countBuy - (dm_cnt + 1)) - (countSell - cntSafeSellProfit);
+         if(MathAbs(_loss) < (SafeSellProfit - Target) && _cnt <= LimitDiffOrders)
+         {
+            dm_cnt++;
+            dm_loss += arrBuy[x].profit;
+         } else {
+            order_left = dm_cnt;
+            min_loss = dm_loss;
+            break;
+         }
+      }
+   }
+   else if(Safe_Type == "sell")
+   {
+      // Collect Min Loss (-)
+      for (int x = 0; x < ArraySize(arrSell); x++)
+      {
+         if(arrSell[x].profit > 0) continue;
+
+         double _loss = dm_loss + arrSell[x].profit;
+         int _cnt = (countSell - (dm_cnt + 1)) - (countBuy - cntSafeBuyProfit);
+         if(MathAbs(_loss) < (SafeBuyProfit - Target) && _cnt <= LimitDiffOrders)
+         {
+            dm_cnt++;
+            dm_loss += arrSell[x].profit;
+         } else {
+            order_left = dm_cnt;
+            min_loss = dm_loss;
+            break;
+         }
       }
    }
 
-   // --- Martingel OUT Loop
-   middle_price = (top_price + bottom_price) / 2;
-   range_price = (top_price - bottom_price) / _point;
-   Highest_stack = Stack_biglot > Highest_stack ? Stack_biglot : Highest_stack;
 
-   if (Avg_dist_should_be == 0 && (countBuy >= Martingel_at || countSell >= Martingel_at))
+
+   return;
+   //--- Collecting Hedge Orders
+   if(Safe_Type == "buy")
    {
-      lock_range = range_price;
-      Avg_dist_should_be = range_price * 0.1;
+      // Collect Min Loss (-)
+      int num = ArraySize(arrBuy) >= ClearSafe ? ClearSafe : ArraySize(arrBuy);
+      for (int x = 0; x < num; x++)
+      {
+         SafeMinLoss += arrBuy[x].profit;
+      }
+
+      // Collect Float Profit (+)
+      double dummy_lot = 0;
+      for (int x = ArraySize(arrSell) - 1; x >= 0; x--)
+      {
+         dummy_lot += arrSell[x].lotsize;
+         double diff_lot = sumLotSell - dummy_lot;
+         // if(diff_lot >= Hedge_Lot) // Clear inside - Keep outside
+         if(dummy_lot > Hedge_Lot) // Clear outside - Keep inside
+         {
+            SafeFloatCount++;
+            SafeFloatLots += arrSell[x].lotsize;
+            SafeFloatProfit += arrSell[x].profit;
+         }
+      }
+   } 
+   else if(Safe_Type == "sell")
+   {
+      // Collect Min Loss (-)
+      int num = ArraySize(arrSell) >= ClearSafe ? ClearSafe : ArraySize(arrSell);
+      for (int x = 0; x < num; x++)
+      {
+         SafeMinLoss += arrSell[x].profit;
+      }
+
+      // Collect Float Profit (+)
+      double dummy_lot = 0;
+      for (int x = ArraySize(arrBuy) - 1; x >= 0; x--)
+      {
+         dummy_lot += arrBuy[x].lotsize;
+         double diff_lot = sumLotBuy - dummy_lot;
+         // if(diff_lot >= Hedge_Lot) // Clear inside - Keep outside
+         if(dummy_lot > Hedge_Lot) // Clear outside - Keep inside
+         {
+            SafeFloatCount++;
+            SafeFloatLots += arrBuy[x].lotsize;
+            SafeFloatProfit += arrBuy[x].profit;
+         }
+      }
    }
 }
 
-bool CloseSideIfTargetReached()
+void CheckArrHedge()
+{
+   if(countBuy != ArraySize(arrBuy) || countSell != ArraySize(arrSell))
+   {
+      ArrayResize(arrBuy, 0);
+      ArrayResize(arrSell, 0);
+
+      for (int i = 0; i < PositionsTotal(); i++)
+      {
+         ulong ticket = PositionGetTicket(i);
+         if (!PositionSelectByTicket(ticket))
+            continue;
+
+         if (PositionGetString(POSITION_SYMBOL) != _Symbol)
+            continue;
+         
+         ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         double price = PositionGetDouble(POSITION_PRICE_OPEN);
+         double volume = PositionGetDouble(POSITION_VOLUME);
+
+         if (type == POSITION_TYPE_BUY)
+         {
+            ArrayPriceSorted(arrBuy, "DESC", (int)ticket, (int)type, volume, price, 0, 0);
+         }
+         else if (type == POSITION_TYPE_SELL)
+         {
+            ArrayPriceSorted(arrSell, "ASC", (int)ticket, (int)type, volume, price, 0, 0);
+         }
+      }
+   }
+}
+
+bool CloseTargetNormal()
 {
    bool closeBuys = (currentBuyProfit >= Target);
    bool closeSells = (currentSellProfit >= Target);
-
-   if(isBoost)
-   {
-      closeBuys = countBuy <= 15 ? (currentBuyProfit >= (Target * Risk_level)) : closeBuys;
-      closeSells = countSell <= 15 ? (currentSellProfit >= (Target * Risk_level)) : closeSells;
-   }
-
-   if(Safe_Type != "")
-   {
-      if(CloseTargetSafeMode())
-      {
-         return false;
-      }
-
-      if(Safe_Type == "buy")
-      {
-         closeBuys = currentBuyProfit >= 0;
-         closeSells = false;
-      }
-      else if(Safe_Type == "sell")
-      {
-         closeBuys = false;
-         closeSells = currentSellProfit >= 0;
-      }
-   }
-   
    if (!closeBuys && !closeSells)
    {
       return false;
@@ -2046,7 +2209,7 @@ bool CloseSideIfTargetReached()
 
    if(!SymbolInfoTick(_Symbol, tick))
    {
-      Print("CST: Failed to get tick");
+      Print("CTN: Failed to get tick");
       return false;
    }
 
@@ -2087,58 +2250,411 @@ bool CloseSideIfTargetReached()
          request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
 
          if (!OrderSend(request, result))
-            PrintFormat("CloseSideIfTargetReached: close failed, ticket=%I64u retcode=%d comment=%s",
+            PrintFormat("CTR: close failed, ticket=%I64u retcode=%d comment=%s",
                         ticket, result.retcode, result.comment);
       }
    }
 
-   Avg_dist_should_be = 0;
+   if(closeBuys)
+   {
+      ArrayResize(arrBuy, 0);
+   } 
+   else if(closeSells)
+   {
+      ArrayResize(arrSell, 0);
+   }
    return true;
+}
+
+bool CloseTargetSafeModeV2()
+{
+   // (1) Condition Close - Close All Target
+   if(NetProfitTotal >= Target)
+   {
+      int safe_removed = 0;
+      if((Safe_Type == "buy"))
+      {
+         for (int i = ArraySize(arrSell) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrSell[i].ticket, arrSell[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+         for (int i = ArraySize(arrBuy) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrBuy[i].ticket, arrBuy[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+      } else if (Safe_Type == "sell")
+      {
+         for (int i = ArraySize(arrBuy) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrBuy[i].ticket, arrBuy[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+         for (int i = ArraySize(arrSell) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrSell[i].ticket, arrSell[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+      }
+      ArrayResize(arrBuy, 0);
+      ArrayResize(arrSell, 0);
+      return true;
+   }
+   
+   // (2) Condition Close - Close Only 1 Side
+   double diff_profit = SafeFloatProfit + SafeMinLoss;
+   // if(diff_profit >= Target)
+   // if((con1 || con2) && diff_profit >= Target)
+   if(false)
+   {
+      int safe_removed = 0;
+      if(Safe_Type == "buy")
+      {
+         // Loss (-)
+         int num = ArraySize(arrBuy) >= ClearSafe ? ClearSafe : ArraySize(arrBuy);
+         for (int x = 0; x < num; x++)
+         {
+            if (ClosePositionByTicket(arrBuy[x].ticket, arrBuy[x].lotsize))
+               safe_removed++;
+         }
+
+         // Profit (+)
+         double dummy_lot = 0;
+         for (int x = ArraySize(arrSell) - 1; x >= 0; x--)
+         {
+            dummy_lot += arrSell[x].lotsize;
+            double diff_lot = sumLotSell - dummy_lot;
+            // if(diff_lot >= Hedge_Lot) // Clear inside - Keep outside
+            if(dummy_lot > Hedge_Lot) // Clear outside - Keep inside
+            {
+               if (ClosePositionByTicket(arrSell[x].ticket, arrSell[x].lotsize))
+                  safe_removed++;
+            }
+         }
+      }
+      else if(Safe_Type == "sell")
+      {
+         // Loss (-)
+         int num = ArraySize(arrSell) >= ClearSafe ? ClearSafe : ArraySize(arrSell);
+         for (int x = 0; x < num; x++)
+         {
+            if (ClosePositionByTicket(arrSell[x].ticket, arrSell[x].lotsize))
+               safe_removed++;
+         }
+
+         // Profit (+)
+         double dummy_lot = 0;
+         for (int x = ArraySize(arrBuy) - 1; x >= 0; x--)
+         {
+            dummy_lot += arrBuy[x].lotsize;
+            double diff_lot = sumLotBuy - dummy_lot;
+            // if(diff_lot >= Hedge_Lot) // Clear inside - Keep outside
+            if(dummy_lot > Hedge_Lot) // Clear outside - Keep inside
+            {
+               if(ClosePositionByTicket(arrBuy[x].ticket, arrBuy[x].lotsize))
+                  safe_removed++;
+            }
+         }
+      }
+      ArrayResize(arrBuy, 0);
+      ArrayResize(arrSell, 0);
+      return true;
+   }
+
+   return false;
 }
 
 bool CloseTargetSafeMode()
 {
-   double diff_profit = 0;
+   bool con1 = (Safe_Type == "buy") && isBetween("Buttom_Sell");
+   bool con2 = (Safe_Type == "sell") && isBetween("Top_Buy");
 
-   if(Safe_Type == "buy")
+   if(!isBetween("AVG"))
    {
-      diff_profit = SafeSellProfit + SafeSumLoss;
-   } 
-   else if(Safe_Type == "sell")
+      bool closeBuys = (currentBuyProfit >= Target);
+      bool closeSells = (currentSellProfit >= Target);
+      double Buy_Per = (currentBuyProfit / acc_balance) * 100;
+      double Sell_Per = (currentSellProfit / acc_balance) * 100;
+
+      if((closeBuys && Sell_Per >= -30) || (closeSells && Buy_Per >= -30))
+         if(CloseTargetNormal())
+            return true;
+   }
+
+   // (1) Condition Close - Close All Target
+   if((con1 || con2) && NetProfitTotal >= Target)
+   // if(false)
    {
-      diff_profit = SafeBuyProfit + SafeSumLoss;
+      int safe_removed = 0;
+      if((Safe_Type == "buy"))
+      {
+         for (int i = ArraySize(arrSell) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrSell[i].ticket, arrSell[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+         for (int i = ArraySize(arrBuy) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrBuy[i].ticket, arrBuy[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+      } else if (Safe_Type == "sell")
+      {
+         for (int i = ArraySize(arrBuy) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrBuy[i].ticket, arrBuy[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+         for (int i = ArraySize(arrSell) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrSell[i].ticket, arrSell[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+      }
+      ArrayResize(arrBuy, 0);
+      ArrayResize(arrSell, 0);
+      return true;
+   }
+
+   // (2) Condition Close - Close Only 1 Side
+   double diff_profit = SafeFloatProfit + SafeMinLoss;
+   if(diff_profit >= Target)
+   // if((con1 || con2) && diff_profit >= Target)
+   // if(false)
+   {
+      int safe_removed = 0;
+      if(Safe_Type == "buy")
+      {
+         // Loss (-)
+         int num = ArraySize(arrBuy) >= ClearSafe ? ClearSafe : ArraySize(arrBuy);
+         for (int x = 0; x < num; x++)
+         {
+            if (ClosePositionByTicket(arrBuy[x].ticket, arrBuy[x].lotsize))
+               safe_removed++;
+         }
+
+         // Profit (+)
+         double dummy_lot = 0;
+         for (int x = ArraySize(arrSell) - 1; x >= 0; x--)
+         {
+            dummy_lot += arrSell[x].lotsize;
+            double diff_lot = sumLotSell - dummy_lot;
+            if(diff_lot >= Hedge_Lot) // Clear inside - Keep outside
+            // if(dummy_lot > Hedge_Lot) // Clear outside - Keep inside
+            {
+               if (ClosePositionByTicket(arrSell[x].ticket, arrSell[x].lotsize))
+                  safe_removed++;
+            }
+         }
+      }
+      else if(Safe_Type == "sell")
+      {
+         // Loss (-)
+         int num = ArraySize(arrSell) >= ClearSafe ? ClearSafe : ArraySize(arrSell);
+         for (int x = 0; x < num; x++)
+         {
+            if (ClosePositionByTicket(arrSell[x].ticket, arrSell[x].lotsize))
+               safe_removed++;
+         }
+
+         // Profit (+)
+         double dummy_lot = 0;
+         for (int x = ArraySize(arrBuy) - 1; x >= 0; x--)
+         {
+            dummy_lot += arrBuy[x].lotsize;
+            double diff_lot = sumLotBuy - dummy_lot;
+            if(diff_lot >= Hedge_Lot) // Clear inside - Keep outside
+            // if(dummy_lot > Hedge_Lot) // Clear outside - Keep inside
+            {
+               if(ClosePositionByTicket(arrBuy[x].ticket, arrBuy[x].lotsize))
+                  safe_removed++;
+            }
+         }
+      }
+      ArrayResize(arrBuy, 0);
+      ArrayResize(arrSell, 0);
+      return true;
+   }
+   
+   // (3) Condition Close - Clear Lotsize
+   // if(isTightAVG() && isBothDD() && isBetween("AVG"))
+   if(false)
+   {
+      if(Safe_Type == "buy")
+      {
+         // if(currentSellProfit >= MathAbs(currentBuyProfit * 0.2))
+            ProcessCloseV2();
+            ResetParams();
+            ArrayResize(arrBuy, 0);
+            ArrayResize(arrSell, 0);
+            return true;
+      } 
+      else if(Safe_Type == "sell")
+      {
+         // if(currentBuyProfit >= MathAbs(currentSellProfit * 0.2))
+            ProcessCloseV2();
+            ResetParams();
+            ArrayResize(arrBuy, 0);
+            ArrayResize(arrSell, 0);
+            return true;
+      }
+   }
+   
+   // (4) Condition Close - Heavy Loss
+   // if(((Safe_Type == "buy") && countSell >= countBuy && currentSellProfit >= (MathAbs(currentBuyProfit) * 0.5)) || 
+   //    ((Safe_Type == "sell") && countBuy >= countSell && currentBuyProfit >= (MathAbs(currentSellProfit) * 0.5))
+   // )
+   if(false)
+   {
+      ProcessCloseV4();
+      ResetParams();
+      ArrayResize(arrBuy, 0);
+      ArrayResize(arrSell, 0);
+      return true;
+   }
+
+   bool con3 = MathAbs(currentBuyProfit) - MathAbs(currentSellProfit) < MathAbs(NetProfitTotal * 0.05);
+   // if(isBetween("AVG") && con3 && totalOrders >= 300)
+   // if(isTightAVG() && isBetween("AVG") && con3 && totalOrders >= 300)
+   if(false)
+   {
+      ProcessCloseV3();
+      ResetParams();
+      ArrayResize(arrBuy, 0);
+      ArrayResize(arrSell, 0);
+      return true;
+   }
+
+   return false;
+}
+
+bool CloseTargetSafeModeOG()
+{
+   // (1) Condition Close - Close All Target
+   if(NetProfitTotal >= Target)
+   {
+      int safe_removed = 0;
+      if((Safe_Type == "buy"))
+      {
+         for (int i = ArraySize(arrSell) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrSell[i].ticket, arrSell[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+         for (int i = ArraySize(arrBuy) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrBuy[i].ticket, arrBuy[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+      } else if (Safe_Type == "sell")
+      {
+         for (int i = ArraySize(arrBuy) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrBuy[i].ticket, arrBuy[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+         for (int i = ArraySize(arrSell) - 1; i >= 0; i--)
+         {
+            if (ClosePositionByTicket(arrSell[i].ticket, arrSell[i].lotsize))
+            {
+               safe_removed++;
+            }
+         }
+      }
+      ArrayResize(arrBuy, 0);
+      ArrayResize(arrSell, 0);
+      return true;
+   }
+   
+   return false;
+   // (2) Condition Close - Lift buttom
+   double diff_profit = 0;
+   double Buy_Per = (currentBuyProfit / acc_balance) * 100;
+   double Sell_Per = (currentSellProfit / acc_balance) * 100;
+
+   int order_after_close = 0;
+   if(Safe_Type == "buy" && countSell >= (countBuy * 0.75))
+   {
+      diff_profit = SafeSellProfit + SafeMinLoss;
+      order_after_close = (countBuy - ClearSafe) - (countSell - cntSafeSellProfit);
+      Print("======================== Diff orders = ",order_after_close," | Diff profit = ",diff_profit);
+   }
+   else if(Safe_Type == "sell" && countBuy >= (countSell * 0.75))
+   {
+      diff_profit = SafeBuyProfit + SafeMinLoss;
+      order_after_close = (countSell - ClearSafe) - (countBuy - cntSafeBuyProfit);
+      Print("======================== Diff orders = ",order_after_close," | Diff profit = ",diff_profit);
+   }
+   
+   if(order_after_close > LimitDiffOrders)
+   {
+      return false;
    }
 
    if(diff_profit >= Target)
    {
       int safe_removed = 0;
-
-      for (int i = 0; i < ArraySize(arrSafeLoss); i++)
+      if(Safe_Type == "buy")
       {
-         if (ClosePositionByTicket(arrSafeLoss[i].ticket, arrSafeLoss[i].lotsize))
+         // Loss (-)
+         int num = ArraySize(arrBuy) >= ClearSafe ? ClearSafe : ArraySize(arrBuy);
+         for (int x = 0; x < num; x++)
          {
-            safe_removed++;
+            if (ClosePositionByTicket(arrBuy[x].ticket, arrBuy[x].lotsize))
+               safe_removed++;
+         }
+         // Profit (+)
+         for (int x = ArraySize(arrSell) - 1; x >= 0; x--)
+         {
+            if(arrSell[x].profit > 0)
+            {
+               if (ClosePositionByTicket(arrSell[x].ticket, arrSell[x].lotsize))
+                  safe_removed++;
+            }
          }
       }
-      for (int i = 0; i < ArraySize(arrSafeProfit); i++)
+      else if(Safe_Type == "sell")
       {
-         if(Safe_Type == "buy" && arrSafeProfit[i].type == POSITION_TYPE_BUY)
+         // Loss (-)
+         int num = ArraySize(arrSell) >= ClearSafe ? ClearSafe : ArraySize(arrSell);
+         for (int x = 0; x < num; x++)
          {
-            continue;
-         } 
-         else if (Safe_Type == "sell" && arrSafeProfit[i].type == POSITION_TYPE_SELL)
-         {
-            continue;
+            if (ClosePositionByTicket(arrSell[x].ticket, arrSell[x].lotsize))
+               safe_removed++;
          }
-
-         if (ClosePositionByTicket(arrSafeProfit[i].ticket, arrSafeProfit[i].lotsize))
+         // Profit (+)
+         for (int x = ArraySize(arrBuy) - 1; x >= 0; x--)
          {
-            safe_removed++;
+            if(arrBuy[x].profit > 0)
+            {
+               if(ClosePositionByTicket(arrBuy[x].ticket, arrBuy[x].lotsize))
+                  safe_removed++;
+            }
          }
       }
-      
-
-      Avg_dist_should_be = 0;
       return true;
    }
 
@@ -2147,46 +2663,281 @@ bool CloseTargetSafeMode()
 
 void CheckAndOpenOrders()
 {
-   const ENUM_TIMEFRAMES currentTf = (ENUM_TIMEFRAMES)Time_frame;
-   const datetime currentBarOpen = iTime(_Symbol, currentTf, 0);
-   const datetime lastOrderOpen = GetLatestOrderOpenTime();
-
-   // PrintFormat("DEBUG: TF=%d currentBarOpen=%s lastOrderOpen=%s",
-   //             currentTf,
-   //             TimeToString(currentBarOpen, TIME_DATE | TIME_SECONDS),
-   //             TimeToString(lastOrderOpen, TIME_DATE | TIME_SECONDS));
-
-   if (lastOrderOpen >= currentBarOpen)
+   double Lot_buy = Cur_Lot;
+   double Lot_sell = Cur_Lot;
+   if(isBoost)
    {
-      // Print("DEBUG: Skip open – lastOrderOpen >= currentBarOpen");
+      Lot_buy = countBuy < 15 ? Cur_Lot * Risk_level : Cur_Lot;
+      Lot_sell = countSell < 15 ? Cur_Lot * Risk_level : Cur_Lot;
+   }
+
+   // Open Order
+   OpenPairOrdersOG(Lot_buy, Lot_sell);
+}
+
+void OpenPairOrdersOG(const double lot_buy, const double lot_sell)
+{
+   MqlTradeRequest request;
+   MqlTradeResult result;
+   MqlTick         tick;
+
+   if(!SymbolInfoTick(_Symbol, tick))
+   {
+      Print("OPO: Failed to get tick");
       return;
    }
 
-   if(isBoost)
+   // Casual Conditions
+   bool F_con1 = (Safe_Type != "" && isBetween("AVG") && !isTightAVG());
+   // Buy Conditions
+   bool F_buy1 = countBuy >= (countSell + LimitDiffOrders);
+   bool F_buy2 = Safe_Type == "buy" && isBetween("Buttom_Sell");
+   // Sell Conditions
+   bool F_sell1 = countSell >= (countBuy + LimitDiffOrders);
+   bool F_sell2 = Safe_Type == "sell" && isBetween("Top_Buy");
+
+   // Open Buy
+   if(!(F_buy1 || F_buy2))
    {
-      if (CloseSideIfTargetReached())
+      ZeroMemory(request);
+      ZeroMemory(result);
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = lot_buy;
+      request.deviation = 5;
+      request.type = ORDER_TYPE_BUY;
+      request.price = NormalizeDouble(tick.ask, _Digits);
+      request.type_filling = ORDER_FILLING_IOC;
+      request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
+      if(OrderSend(request, result))
       {
-         return;
+         // ตรวจสอบว่าคำสั่งซื้อขายเสร็จสมบูรณ์ (Trade Done)
+         if(result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)
+         {
+            ulong dealTicket = result.deal; // ได้เลขดีล (ใบเสร็จ)
+            
+            // ตรวจสอบว่ามีเลข Deal จริงหรือไม่ (ถ้าเป็น Market Order ต้องมี)
+            if(dealTicket > 0)
+            {
+               // เลือก Deal จากประวัติเทรด เพื่อดึงข้อมูลเชิงลึก
+               if(HistoryDealSelect(dealTicket))
+               {
+                  // ดึงค่า POSITION_ID ออกมา (นี่คือ Ticket ของ Position ที่แท้จริง)
+                  ulong positionTicket = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+                  
+                  // เลือก Position นั้นเพื่อทำงานต่อ
+                  if(PositionSelectByTicket(positionTicket))
+                  {
+                     double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+                     double volume = PositionGetDouble(POSITION_VOLUME);
+                     ArrayPriceSorted(arrBuy, "DESC", (int)positionTicket, (int)ORDER_TYPE_BUY, volume, openPrice, 0, 0);
+                  }
+                  else
+                  {
+                     Print("OSB find Ticket but cannot Select!");
+                  }
+               }
+            }
+         }
+         else
+         {
+            Print("OSB Server refused! Code: ", result.retcode);
+         }
+      }
+      else
+      {
+         Print("OSB OrderSend failed! Error: ", GetLastError());
       }
    }
 
-   // Print("DEBUG: OpenPairOrders(_lot) called");
-   if (Martingel_MODE && (countBuy >= Martingel_at || countSell >= Martingel_at))
+   // Open Sell
+   if(!(F_sell1 || F_sell2))
+   // if(!(s_con1 || s_con7 || s_con8 || s_con9))
+   // if(true)
    {
-      MartingelCondition();
-   }
-   else
-   {
-      double Lot_buy = Lot_Size;
-      double Lot_sell = Lot_Size;
-
-      if(isBoost)
+      ZeroMemory(request);
+      ZeroMemory(result);
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = lot_sell;
+      request.deviation = 5;
+      request.type = ORDER_TYPE_SELL;
+      request.price = NormalizeDouble(tick.bid, _Digits);
+      request.type_filling = ORDER_FILLING_IOC;
+      request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
+      if(OrderSend(request, result))
       {
-         Lot_buy = countBuy < 15 ? Lot_Size * Risk_level : Lot_Size;
-         Lot_sell = countSell < 15 ? Lot_Size * Risk_level : Lot_Size;
+         // ตรวจสอบว่าคำสั่งซื้อขายเสร็จสมบูรณ์ (Trade Done)
+         if(result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)
+         {
+            ulong dealTicket = result.deal; // ได้เลขดีล (ใบเสร็จ)
+            
+            // ตรวจสอบว่ามีเลข Deal จริงหรือไม่ (ถ้าเป็น Market Order ต้องมี)
+            if(dealTicket > 0)
+            {
+               // เลือก Deal จากประวัติเทรด เพื่อดึงข้อมูลเชิงลึก
+               if(HistoryDealSelect(dealTicket))
+               {
+                  // ดึงค่า POSITION_ID ออกมา (นี่คือ Ticket ของ Position ที่แท้จริง)
+                  ulong positionTicket = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+                  
+                  // เลือก Position นั้นเพื่อทำงานต่อ
+                  if(PositionSelectByTicket(positionTicket))
+                  {
+                     double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+                     double volume = PositionGetDouble(POSITION_VOLUME);
+                     ArrayPriceSorted(arrSell, "ASC", (int)positionTicket, (int)ORDER_TYPE_SELL, volume, openPrice, 0, 0);
+                  }
+                  else
+                  {
+                     Print("OSS find Ticket but cannot Select!");
+                  }
+               }
+            }
+         }
+         else
+         {
+            Print("OSS Server refused! Code: ", result.retcode);
+         }
       }
+      else
+      {
+         Print("OSS OrderSend failed! Error: ", GetLastError());
+      }
+   }
+}
 
-      OpenPairOrders(Lot_buy, Lot_sell);
+void OpenPairOrdersV2(const double lot_buy, const double lot_sell)
+{
+   MqlTradeRequest request;
+   MqlTradeResult result;
+   MqlTick         tick;
+
+   if(!SymbolInfoTick(_Symbol, tick))
+   {
+      Print("OPO: Failed to get tick");
+      return;
+   }
+
+   // Casual Conditions
+   bool F_con1 = (Safe_Type != "" && isBetween("AVG") && !isTightAVG());
+   // Buy Conditions
+   bool F_buy1 = Safe_Type == "sell" && countBuy >= (countSell * 1.7);
+   bool F_buy2 = Safe_Type == "buy" && (isBetween("Top_Sell") || isBetween("Buttom_Sell"));
+   bool F_buy3 = Safe_Type == "sell" && (isBetween("Top_Sell") || isBetween("Buttom_Sell"));
+   // Sell Conditions
+   bool F_sell1 = Safe_Type == "buy" && countSell >= (countBuy * 1.7);
+   bool F_sell2 = Safe_Type == "sell" && (isBetween("Top_Buy") || isBetween("Buttom_Buy"));
+   bool F_sell3 = Safe_Type == "buy" && (isBetween("Top_Buy") || isBetween("Buttom_Buy"));
+
+   // Open Buy
+   if(!(F_con1 || F_buy1 || F_buy2 || F_buy3))
+   {
+      ZeroMemory(request);
+      ZeroMemory(result);
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = lot_buy;
+      request.deviation = 5;
+      request.type = ORDER_TYPE_BUY;
+      request.price = NormalizeDouble(tick.ask, _Digits);
+      request.type_filling = ORDER_FILLING_IOC;
+      request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
+      if(OrderSend(request, result))
+      {
+         // ตรวจสอบว่าคำสั่งซื้อขายเสร็จสมบูรณ์ (Trade Done)
+         if(result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)
+         {
+            ulong dealTicket = result.deal; // ได้เลขดีล (ใบเสร็จ)
+            
+            // ตรวจสอบว่ามีเลข Deal จริงหรือไม่ (ถ้าเป็น Market Order ต้องมี)
+            if(dealTicket > 0)
+            {
+               // เลือก Deal จากประวัติเทรด เพื่อดึงข้อมูลเชิงลึก
+               if(HistoryDealSelect(dealTicket))
+               {
+                  // ดึงค่า POSITION_ID ออกมา (นี่คือ Ticket ของ Position ที่แท้จริง)
+                  ulong positionTicket = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+                  
+                  // เลือก Position นั้นเพื่อทำงานต่อ
+                  if(PositionSelectByTicket(positionTicket))
+                  {
+                     double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+                     double volume = PositionGetDouble(POSITION_VOLUME);
+                     ArrayPriceSorted(arrBuy, "DESC", (int)positionTicket, (int)ORDER_TYPE_BUY, volume, openPrice, 0, 0);
+                  }
+                  else
+                  {
+                     Print("OSB find Ticket but cannot Select!");
+                  }
+               }
+            }
+         }
+         else
+         {
+            Print("OSB Server refused! Code: ", result.retcode);
+         }
+      }
+      else
+      {
+         Print("OSB OrderSend failed! Error: ", GetLastError());
+      }
+   }
+
+   // Open Sell
+   if(!(F_con1 || F_sell1 || F_sell2 || F_sell3))
+   // if(!(s_con1 || s_con7 || s_con8 || s_con9))
+   // if(true)
+   {
+      ZeroMemory(request);
+      ZeroMemory(result);
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = lot_sell;
+      request.deviation = 5;
+      request.type = ORDER_TYPE_SELL;
+      request.price = NormalizeDouble(tick.bid, _Digits);
+      request.type_filling = ORDER_FILLING_IOC;
+      request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
+      if(OrderSend(request, result))
+      {
+         // ตรวจสอบว่าคำสั่งซื้อขายเสร็จสมบูรณ์ (Trade Done)
+         if(result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)
+         {
+            ulong dealTicket = result.deal; // ได้เลขดีล (ใบเสร็จ)
+            
+            // ตรวจสอบว่ามีเลข Deal จริงหรือไม่ (ถ้าเป็น Market Order ต้องมี)
+            if(dealTicket > 0)
+            {
+               // เลือก Deal จากประวัติเทรด เพื่อดึงข้อมูลเชิงลึก
+               if(HistoryDealSelect(dealTicket))
+               {
+                  // ดึงค่า POSITION_ID ออกมา (นี่คือ Ticket ของ Position ที่แท้จริง)
+                  ulong positionTicket = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+                  
+                  // เลือก Position นั้นเพื่อทำงานต่อ
+                  if(PositionSelectByTicket(positionTicket))
+                  {
+                     double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+                     double volume = PositionGetDouble(POSITION_VOLUME);
+                     ArrayPriceSorted(arrSell, "ASC", (int)positionTicket, (int)ORDER_TYPE_SELL, volume, openPrice, 0, 0);
+                  }
+                  else
+                  {
+                     Print("OSS find Ticket but cannot Select!");
+                  }
+               }
+            }
+         }
+         else
+         {
+            Print("OSS Server refused! Code: ", result.retcode);
+         }
+      }
+      else
+      {
+         Print("OSS OrderSend failed! Error: ", GetLastError());
+      }
    }
 }
 
@@ -2202,134 +2953,168 @@ void OpenPairOrders(const double lot_buy, const double lot_sell)
       return;
    }
 
-   ZeroMemory(request);
-   ZeroMemory(result);
-   request.action = TRADE_ACTION_DEAL;
-   request.symbol = _Symbol;
-   request.volume = lot_buy;
-   request.deviation = 5;
-   request.type = ORDER_TYPE_BUY;
-   request.price = NormalizeDouble(tick.ask, _Digits);
-   request.type_filling = ORDER_FILLING_IOC;
-   request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
-   if (!OrderSend(request, result))
-      PrintFormat("Buy OrderSend failed. retcode=%d comment=%s",
-                  result.retcode, result.comment);
+   // false
+   bool b_con1 = (Safe_Type == "buy");
+   bool b_con2 = (Safe_Type == "buy" && (isBetween("Buttom_Sell") || (isBetween("Top_Sell") && countSell < countBuy)));
+   bool b_con3 = (Safe_Type != "" && isBetween("AVG") && countSell < countBuy);
+   bool b_con4 = (Safe_Type != "" && isBetween("AVG") && countBuy == countSell);
+   bool b_con5 = (Safe_Type != "" && isBetween("AVG") && countBuy == countSell && !isTightAVG());
+   bool b_con6 = (Safe_Type == "buy" && !isBetween("AVG"));
+   bool b_con7 = (countBuy >= (countSell + ClearSafe*2));
+   bool b_con8 = (Safe_Type != "" && isBetween("AVG") && countBuy > countSell);
+   bool b_con9 = (Safe_Type == "sell" && isBetween("Top_Buy"));
+   bool b_con11 = (isTightAVG() && isBetween("AVG") && countBuy == countSell);
+   // true
+   bool b_con10 = (Safe_Type == "buy" && !isBetween("AVG") && countSell == (countBuy + ClearSafe*2));
 
-   ZeroMemory(request);
-   ZeroMemory(result);
-   request.action = TRADE_ACTION_DEAL;
-   request.symbol = _Symbol;
-   request.volume = lot_sell;
-   request.deviation = 5;
-   request.type = ORDER_TYPE_SELL;
-   request.price = NormalizeDouble(tick.bid, _Digits);
-   request.type_filling = ORDER_FILLING_IOC;
-   request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
-   if (!OrderSend(request, result))
-      PrintFormat("Sell OrderSend failed. retcode=%d comment=%s",
-                  result.retcode, result.comment);
-}
-
-void OpenSingleOrder(ENUM_ORDER_TYPE type, double lot)
-{
-   MqlTradeRequest request;
-   MqlTradeResult result;
-   MqlTick         tick;
-
-   if(!SymbolInfoTick(_Symbol, tick))
+   if(!(b_con2 || b_con3 || b_con7 || b_con11))
+   // if(!(b_con1 || b_con7 || b_con8 || b_con9))
+   // if(true)
    {
-      Print("OSO: Failed to get tick");
-      return;
-   }
-   
-   ZeroMemory(request);
-   ZeroMemory(result);
-   request.action = TRADE_ACTION_DEAL;
-   request.symbol = _Symbol;
-   request.volume = lot;
-   request.deviation = 5;
-   request.type = type;
-   if(type == ORDER_TYPE_BUY)
-   {
+      ZeroMemory(request);
+      ZeroMemory(result);
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = lot_buy;
+      request.deviation = 5;
+      request.type = ORDER_TYPE_BUY;
       request.price = NormalizeDouble(tick.ask, _Digits);
-   } 
-   else if(type == ORDER_TYPE_SELL) 
+      request.type_filling = ORDER_FILLING_IOC;
+      request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
+      if(OrderSend(request, result))
+      {
+         // ตรวจสอบว่าคำสั่งซื้อขายเสร็จสมบูรณ์ (Trade Done)
+         if(result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)
+         {
+            ulong dealTicket = result.deal; // ได้เลขดีล (ใบเสร็จ)
+            
+            // ตรวจสอบว่ามีเลข Deal จริงหรือไม่ (ถ้าเป็น Market Order ต้องมี)
+            if(dealTicket > 0)
+            {
+               // เลือก Deal จากประวัติเทรด เพื่อดึงข้อมูลเชิงลึก
+               if(HistoryDealSelect(dealTicket))
+               {
+                  // ดึงค่า POSITION_ID ออกมา (นี่คือ Ticket ของ Position ที่แท้จริง)
+                  ulong positionTicket = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+                  
+                  // เลือก Position นั้นเพื่อทำงานต่อ
+                  if(PositionSelectByTicket(positionTicket))
+                  {
+                     double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+                     double volume = PositionGetDouble(POSITION_VOLUME);
+                     ArrayPriceSorted(arrBuy, "DESC", (int)positionTicket, (int)ORDER_TYPE_BUY, volume, openPrice, 0, 0);
+                  }
+                  else
+                  {
+                     Print("OSB find Ticket but cannot Select!");
+                  }
+               }
+            }
+         }
+         else
+         {
+            Print("OSB Server refused! Code: ", result.retcode);
+         }
+      }
+      else
+      {
+         Print("OSB OrderSend failed! Error: ", GetLastError());
+      }
+   }
+
+   // false
+   bool s_con1 = (Safe_Type == "sell");
+   bool s_con2 = (Safe_Type == "sell" && (isBetween("Top_Buy") || (isBetween("Buttom_Buy") && countBuy < countSell)));
+   bool s_con3 = (Safe_Type != "" && isBetween("AVG") && countBuy < countSell);
+   bool s_con4 = (Safe_Type != "" && isBetween("AVG") && countBuy == countSell);
+   bool s_con5 = (Safe_Type != "" && isBetween("AVG") && countBuy == countSell && !isTightAVG());
+   bool s_con6 = (Safe_Type == "sell" && !isBetween("AVG"));
+   bool s_con7 = (countSell >= (countBuy + ClearSafe*2));
+   bool s_con8 = (Safe_Type != "" && isBetween("AVG") && countSell > countBuy);
+   bool s_con9 = (Safe_Type == "buy" && isBetween("Buttom_Sell"));
+   bool s_con11 = (isTightAVG() && !(isBetween("Top_Buy") || isBetween("Buttom_Sell")) && countBuy == countSell);
+   // true
+   bool s_con10 = (Safe_Type == "sell" && !isBetween("AVG") && countBuy == (countSell + ClearSafe*2));
+
+   if(!(s_con2 || s_con3 || s_con7 || s_con11))
+   // if(!(s_con1 || s_con7 || s_con8 || s_con9))
+   // if(true)
    {
+      ZeroMemory(request);
+      ZeroMemory(result);
+      request.action = TRADE_ACTION_DEAL;
+      request.symbol = _Symbol;
+      request.volume = lot_sell;
+      request.deviation = 5;
+      request.type = ORDER_TYPE_SELL;
       request.price = NormalizeDouble(tick.bid, _Digits);
-   }
-   request.type_filling = ORDER_FILLING_IOC;
-   request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
-   if (!OrderSend(request, result))
-      PrintFormat("Buy OrderSend failed. retcode=%d comment=%s",
-                  result.retcode, result.comment);
-}
-
-void MartingelCondition()
-{
-   int _dist_every = (int)(range_price / lock_range);
-
-   if (countBuy >= Martingel_at)
-   {
-      double atlease_price = (bottom_price + (Avg_dist_should_be * _point));
-      // Print("======= Stack_biglot: ", Stack_biglot, " | _dist_every", _dist_every);
-      bool condition1 = _ask < Average_sell_price && _bid < Average_sell_price;
-      bool condition2 = Stack_biglot < _dist_every;
-      // bool condition2 = Average_sell_price < atlease_price;
-      bool condition3 = Cur_avg_diff > Avg_dist_should_be;
-      // Print("======= condition1: ", condition1, " | condition2: ", condition2, " | condition3: ", condition3);
-
-      if (true && condition2 && condition3)
+      request.type_filling = ORDER_FILLING_IOC;
+      request.comment = "FB:" + Comp_Name + " ให้โรบอทช่วยคุณเทรด | " + EA_Name;
+      if(OrderSend(request, result))
       {
-         double newLot = CalculateBigLot("Buy");
-         // Avg_dist_should_be = 0;
-         OpenSingleOrder(ORDER_TYPE_BUY, newLot); 
+         // ตรวจสอบว่าคำสั่งซื้อขายเสร็จสมบูรณ์ (Trade Done)
+         if(result.retcode == TRADE_RETCODE_DONE || result.retcode == TRADE_RETCODE_PLACED)
+         {
+            ulong dealTicket = result.deal; // ได้เลขดีล (ใบเสร็จ)
+            
+            // ตรวจสอบว่ามีเลข Deal จริงหรือไม่ (ถ้าเป็น Market Order ต้องมี)
+            if(dealTicket > 0)
+            {
+               // เลือก Deal จากประวัติเทรด เพื่อดึงข้อมูลเชิงลึก
+               if(HistoryDealSelect(dealTicket))
+               {
+                  // ดึงค่า POSITION_ID ออกมา (นี่คือ Ticket ของ Position ที่แท้จริง)
+                  ulong positionTicket = HistoryDealGetInteger(dealTicket, DEAL_POSITION_ID);
+                  
+                  // เลือก Position นั้นเพื่อทำงานต่อ
+                  if(PositionSelectByTicket(positionTicket))
+                  {
+                     double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+                     double volume = PositionGetDouble(POSITION_VOLUME);
+                     ArrayPriceSorted(arrSell, "ASC", (int)positionTicket, (int)ORDER_TYPE_SELL, volume, openPrice, 0, 0);
+                  }
+                  else
+                  {
+                     Print("OSS find Ticket but cannot Select!");
+                  }
+               }
+            }
+         }
+         else
+         {
+            Print("OSS Server refused! Code: ", result.retcode);
+         }
       }
       else
       {
-         OpenSingleOrder(ORDER_TYPE_BUY, Lot_Size);
+         Print("OSS OrderSend failed! Error: ", GetLastError());
       }
-
-      OpenSingleOrder(ORDER_TYPE_SELL, Lot_Size);
-   }
-
-   if (countSell >= Martingel_at)
-   {
-      double atlease_price = (top_price - (Avg_dist_should_be * _point));
-      // Print("======= Stack_biglot: ", Stack_biglot, " | _dist_every", _dist_every);
-      bool condition1 = _ask > Average_buy_price && _bid > Average_buy_price;
-      bool condition2 = Stack_biglot < _dist_every;
-      // bool condition2 = Average_sell_price < atlease_price;
-      bool condition3 = Cur_avg_diff > Avg_dist_should_be;
-      // Print("======= condition1: ", condition1, " | condition2: ", condition2, " | condition3: ", condition3);
-
-      if (true && condition2 && condition3)
-      {
-         double newLot = CalculateBigLot("Sell");
-         // Avg_dist_should_be = 0;
-         OpenSingleOrder(ORDER_TYPE_SELL, newLot);
-      }
-      else
-      {
-         OpenSingleOrder(ORDER_TYPE_SELL, Lot_Size);
-      }
-
-      OpenSingleOrder(ORDER_TYPE_BUY, Lot_Size);
    }
 }
 
 void ShowComment()
 {
-   if (false)
+   if (true)
    {
-      Comment("\n ===================================== " + " MTGL every:  " + NumberFormat((string)Avg_start_mtgl) // 15,000
-              + "    |    Diff Should be : " + NumberFormat((string)Avg_dist_should_be)                             // 15000*10%=1,500
-              + "    |    Current : " + NumberFormat((string)Cur_avg_diff) + "    |    Lock : " + NumberFormat((string)lock_range) 
+      for (int i = 0; i < ArraySize(arrSafeProfit); i++)
+      {
+         
+      }
+      
+      string range_per = NumberFormat((string)((Cur_avg_diff / range_price) * 100));
+      double Buy_Per = (currentBuyProfit / acc_balance) * 100;
+      double Sell_Per = (currentSellProfit / acc_balance) * 100;
+      Comment("\n ===================================== "
               + "\n ===================================== " 
-              + " Top:  " + NumberFormat((string)top_price) + "    |    Bottom:  " + NumberFormat((string)bottom_price) + "    |    Middle price:  " + NumberFormat((string)middle_price) + "    |    Range price:  " + NumberFormat((string)range_price) 
-              + "\n ===================================== " + " Highest Lot: " + DoubleToString(maxLot, 2) + "    |    Stack:  " + (string)Stack_biglot + " / " + (string)Highest_stack
+              + "    |    Current : " + NumberFormat((string)Cur_avg_diff) + "    |    Range price:  " + NumberFormat((string)range_price) + " | ("+range_per+"%)"
               + "\n =====================================  Safe_Type : " + Safe_Type + " | Min_DD : " + (string)Safe_min_DD 
-              + "\n =====================================  Safe_Arr : " + (string)ArraySize(arrSafeLoss) + " | Loss : " + (string)SafeSumLoss
+              + "\n =====================================  Lot_Buy : " + (string)sumLotBuy + " | Lot_Sell : " + (string)sumLotSell + " | Hedge_Lot : " + (string)Hedge_Lot
+              + "\n ===================================== "
+              + "\n =====================================  Min Loss : " + NumberFormat((string)min_loss) + " | Order left : " + (string)order_left
+            //   + "\n =====================================  Min Loss : " + NumberFormat((string)SafeMinLoss) + " | Float Profit : " + NumberFormat((string)SafeFloatProfit) 
+            //   + "\n =====================================  Float Count : " + NumberFormat((string)SafeFloatCount) + " | Float Lots : " + NumberFormat((string)SafeFloatLots)
+              + "\n ===================================== "
+              + "\n =====================================  Top : " + (string)top_price + " | Buttom : " + (string)bottom_price
             );
    }
 }
@@ -2352,21 +3137,146 @@ void ResetProfitParams()
 
    ArrayResize(arrSafeLoss, 0);
    ArrayResize(arrSafeProfit, 0);
-   SafeSumLoss = 0;
+   SafeFloatCount = 0;
+   SafeFloatLots = 0;
+   SafeFloatProfit = 0;
+   SafeMinLoss = 0;
    SafeBuyProfit = 0;
    SafeSellProfit = 0;
+   cntSafeBuyProfit = 0;
+   cntSafeSellProfit = 0;
 
+   order_left = 0;
+   min_loss = 0;
+   
    highest_loss = 0;
    highest_profit = 0;
 
    Average_buy_price = 0;
    Average_sell_price = 0;
-   // Avg_dist_should_be   = 0;
    top_price = 0;
    bottom_price = 0;
    range_price = 0;
    middle_price = 0;
-   Stack_biglot = 0;
+}
+
+bool isBetween(string _range)
+{
+   bool result = false;
+   double HalfBuyRange = (top_price + Average_buy_price) / 2;
+   double HalfSellRange = (bottom_price + Average_sell_price) / 2;
+
+   double RangeOfPrice = top_price - bottom_price;
+   double SplitRange = RangeOfPrice * 0.25; // 1/4
+   // Average Line
+   if(_range == "AVG")
+   {
+      if(_ask < Average_buy_price && _bid < Average_buy_price && 
+         _ask > Average_sell_price && _bid > Average_sell_price)
+      {
+         result = true;
+      }
+   } 
+   // Top : Buy
+   else if(_range == "Top_Buy")
+   {
+      // double TB = top_price - SplitRange;
+      // if(_ask > TB && _bid > TB)
+      // {
+      //    result = true;
+      // }
+      if(_ask > HalfBuyRange && _bid > HalfBuyRange)
+      {
+         result = true;
+      }
+   }
+   // Buttom : Buy
+   else if(_range == "Buttom_Buy")
+   {
+      if(_ask < HalfBuyRange && _bid < HalfBuyRange &&
+         _ask > Average_buy_price && _bid > Average_buy_price)
+      {
+         result = true;
+      }
+   }
+   // Top : Sell
+   else if(_range == "Top_Sell")
+   {
+      if(_ask < Average_sell_price && _bid < Average_sell_price &&
+         _ask > HalfSellRange && _bid > HalfSellRange)
+      {
+         result = true;
+      }
+   }
+   // Buttom : Sell
+   else if(_range == "Buttom_Sell")
+   {
+      // double BS = bottom_price + SplitRange;
+      // if(_ask < BS && _bid < BS)
+      // {
+      //    result = true;
+      // }
+      if(_ask < HalfSellRange && _bid < HalfSellRange)
+      {
+         result = true;
+      }
+   }
+   return result;
+}
+
+bool isTightAVG()
+{
+   if(Cur_avg_diff <= (range_price * 0.2))
+   {
+      return true;
+   }
+   return false;
+}
+
+bool isDynamicTight()
+{
+   double range_per = 0.2;
+
+   if (totalOrders >= 500)
+      range_per = 0.40;
+   else if (totalOrders >= 400)
+      range_per = 0.35;
+   else if (totalOrders >= 300)
+      range_per = 0.30;
+   else if (totalOrders >= 200)
+      range_per = 0.25;
+
+   if(Cur_avg_diff <= (range_price * range_per))
+   {
+      return true;
+   }
+   return false;
+
+}
+
+bool isEvenLotsize()
+{
+   int diff = (int)MathAbs(sumLotBuy - sumLotSell);
+   return diff > 0 && diff <= (Cur_Lot * 5);
+}
+
+bool isBothDD()
+{
+   double Buy_Per = (currentBuyProfit / acc_balance) * 100;
+   double Sell_Per = (currentSellProfit / acc_balance) * 100;
+
+   if((Buy_Per <= Safe_DD_per && Safe_DD > 0) && (Sell_Per <= Safe_DD_per && Safe_DD > 0))
+   {
+      return true;
+   }
+   return false;
+}
+
+bool isClearV2()
+{
+   bool con1 = Safe_Type == "buy" && isBetween("Top_Sell") && currentSellProfit > MathAbs(currentBuyProfit * 0.6);
+   bool con2 = Safe_Type == "sell" && isBetween("Buttom_Buy") && currentBuyProfit > MathAbs(currentSellProfit * 0.6);
+   return con1 || con2;
 }
 
 void NotifyFeatures()
@@ -2424,56 +3334,6 @@ void NotifyFeatures()
       lastNotify = curDate;
       SaveLastNotificate((double)lastNotify);
    }
-}
-
-double CalculateBigLot(string type)
-{
-   double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-   double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-   double newLot = Lot_Size;
-   double minLot  = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double step_lot = minLot;
-
-   double dummy_avg_buy = Average_buy_price <= 0 ? _bid : Average_buy_price;
-   double dummy_avg_sell = Average_sell_price <= 0 ? _ask : Average_sell_price;
-
-   double exit_target = Avg_dist_should_be;
-   bool first_time = true;
-   double res = 0;
-
-   if (type == "Buy")
-   {
-      while (res >= exit_target || first_time)
-      {
-         if (Limit_lot_size > 0 && newLot >= Limit_lot_size)
-            return newLot;
-
-         first_time = false;
-         newLot += step_lot;
-         double dummy_distance = (currentBuyProfit / (MathAbs((sumLotBuy + newLot) * tick_value))) * tick_size;
-         double dummy_avg = _bid - dummy_distance;
-         res = (dummy_avg - dummy_avg_sell) / _Point;
-      }
-      return newLot;
-   }
-   else if (type == "Sell")
-   {
-      while (res >= exit_target || first_time)
-      {
-         if (Limit_lot_size > 0 && newLot >= Limit_lot_size)
-            return newLot;
-
-         first_time = false;
-         newLot += step_lot;
-         double dummy_distance = (currentSellProfit / (MathAbs((sumLotSell + newLot) * tick_value))) * tick_size;
-         double dummy_avg = _ask + dummy_distance;
-         res = (dummy_avg_buy - dummy_avg) / _Point;
-      }
-      // Print("=== newLot:",newLot);
-      return newLot;
-   }
-
-   return 0;
 }
 
 datetime GetLatestOrderOpenTime()
@@ -2611,7 +3471,7 @@ void AutomaticCloseOrders()
    }
 }
 
-bool ClosePositionByTicket(int ticket, double lots)
+bool ClosePositionByTicket(long ticket, double lots)
 {
    if (!PositionSelectByTicket(ticket))
       return (false);
@@ -2712,7 +3572,7 @@ void ProcessCloseV2()
 
    for (int j = 0; j < ArraySize(arrLoss); j++)
    {
-      int big_loss_ticket = arrLoss[j].ticket;
+      long big_loss_ticket = arrLoss[j].ticket;
       int big_loss_type = arrLoss[j].type;
       double big_loss_price = arrLoss[j].price;
       double big_loss_profit = arrLoss[j].profit;
@@ -2840,10 +3700,10 @@ void ProcessCloseV2()
       ArrayResize(arrDummy, 0);
       ArrayResize(arrDelete, 0);
 
-      if (removed >= MustRemove)
-      {
-         break;
-      }
+      // if (removed >= MustRemove)
+      // {
+      //    break;
+      // }
 
       // -----------
       // ( 3 ) END
@@ -3055,6 +3915,124 @@ void ProcessCloseV3()
    Print(txt_name + " | Money result: Profit[" + DoubleToString(profitTotal, 2) + "] - Loss[" + DoubleToString(lossTotal, 2) + "] = Net[" + DoubleToString(netTotal, 2) + "] | Orders removed: Buy[" + IntegerToString(removed_buy) + "] + Sell[" + IntegerToString(removed_sell) + "] = Total[" + IntegerToString(removed) + "]");
 }
 
+void ProcessCloseV4()
+{
+   // Profit (+)
+   double sumProfit = 0;
+   double sumLotProfit = 0;
+
+   // Loss (-)
+   double sumLoss = 0;
+   double sumLotLoss = 0;
+
+   // Casual
+   bool out_lotsize = false;
+   bool out_profit = false;
+   double resLotsize = 0;
+   double resProfit = 0;
+
+   for (int i = 0; i < PositionsTotal(); i++)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if (ticket == 0 || !PositionSelectByTicket(ticket))
+         continue;
+
+      if (PositionGetString(POSITION_SYMBOL) != _Symbol)
+         continue;
+
+      ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      double profit = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      double swap = PositionGetDouble(POSITION_SWAP);
+      double price = PositionGetDouble(POSITION_PRICE_OPEN);
+      double lots = PositionGetDouble(POSITION_VOLUME);
+      // Push all Profit (+) in array
+      if(profit > 0)
+      {
+         if(Safe_Type == "buy" && posType == POSITION_TYPE_SELL)
+         {
+            InsertArraySorted(arrProfit, "DESC", ticket, (int)posType, lots, price, profit, swap);
+            sumProfit += profit;
+            sumLotProfit += lots;
+         } 
+         else if(Safe_Type == "sell" && posType == POSITION_TYPE_BUY)
+         {
+            InsertArraySorted(arrProfit, "ASC", ticket, (int)posType, lots, price, profit, swap);
+            AddKeyValue(arrProfit, ticket, (int)posType, lots, price, profit, swap);
+            sumProfit += profit;
+            sumLotProfit += lots;
+         }
+      }
+
+      // Push all Loss (-) in array
+      if(Safe_Type == "buy" && posType == POSITION_TYPE_BUY)
+      {
+         ArrayPriceSorted(arrLoss, "DESC", ticket, (int)posType, lots, price, profit, swap);
+      }
+      else if(Safe_Type == "sell" && posType == POSITION_TYPE_SELL)
+      {
+         ArrayPriceSorted(arrLoss, "ASC", ticket, (int)posType, lots, price, profit, swap);
+      }
+   }
+
+   // Compare Profit and Loss
+   for (int i = 0; i < ArraySize(arrLoss); i++)
+   {
+      sumLoss += MathAbs(arrLoss[i].profit);
+      sumLotLoss += arrLoss[i].lotsize;
+      if(sumLotLoss > sumLotProfit && sumLoss < sumProfit)
+      {
+         out_lotsize = true;
+         resLotsize = sumLotLoss;
+         break;
+      }
+      if(sumLoss > sumProfit)
+      {
+         out_profit = true;
+         resProfit = sumLoss;
+         break;
+      }
+      AddKeyValue(arrDelete, arrLoss[i].ticket, arrLoss[i].type, arrLoss[i].lotsize, arrLoss[i].price, arrLoss[i].profit, arrLoss[i].swap);
+   }
+
+   double delLot = 0;
+   double delProfit = 0;
+   for (int i = 0; i < ArraySize(arrProfit); i++)
+   {
+      AddKeyValue(arrDelete, arrProfit[i].ticket, arrProfit[i].type, arrProfit[i].lotsize, arrProfit[i].price, arrProfit[i].profit, arrProfit[i].swap);
+      delLot += arrProfit[i].lotsize;
+      delProfit += arrProfit[i].profit;
+
+      if(out_lotsize && resLotsize == delLot)
+      {
+         break;
+      }
+      // else if(out_profit && resProfit == delProfit)
+      // {
+      //    break;
+      // }
+   }
+
+   // Start delete order 1 by 1
+   removed = 0;
+   for (int i = 0; i < ArraySize(arrDelete); i++)
+   {
+      if (ClosePositionByTicket(arrDelete[i].ticket, arrDelete[i].lotsize))
+      {
+         // if (arrDelete[i].type == POSITION_TYPE_BUY)
+         //    removed_buy++;
+         // else if (arrDelete[i].type == POSITION_TYPE_SELL)
+         //    removed_sell++;
+
+         removed++;
+         // Print("Remove order [" + IntegerToString(arrDelete[i].ticket) + "] success!");
+      }
+      else
+      {
+         // Print("Cannot remove order [" + IntegerToString(arrDelete[i].ticket) + "]");
+      }
+   }
+}
+
 //----- [Helpers]
 void CreateDummy()
 {
@@ -3094,7 +4072,7 @@ void CreateDummy()
    }
 }
 
-void InsertArraySorted(KeyValue &arr[], string format, int ticket, int type, double lot, double price, double profit, double swap)
+void InsertArraySorted(KeyValue &arr[], string format, long ticket, int type, double lot, double price, double profit, double swap)
 {
    KeyValue num;
    num.ticket = ticket;
@@ -3125,6 +4103,50 @@ void InsertArraySorted(KeyValue &arr[], string format, int ticket, int type, dou
       for (int i = 0; i < size; i++)
       {
          if (num.profit > arr[i].profit)
+         {
+            pos = i;
+            break;
+         }
+      }
+   }
+
+   for (int i = size; i > pos; i--)
+      arr[i] = arr[i - 1];
+
+   arr[pos] = num;
+}
+
+void ArrayPriceSorted(KeyValue &arr[], string format, long ticket, int type, double lot, double price, double profit, double swap)
+{
+   KeyValue num;
+   num.ticket = ticket;
+   num.type = type;
+   num.lotsize = lot;
+   num.price = price;
+   num.profit = profit;
+   num.swap = swap;
+
+   int size = ArraySize(arr);
+   ArrayResize(arr, size + 1);
+
+   int pos = size;
+
+   if (format == "ASC")
+   {
+      for (int i = 0; i < size; i++)
+      {
+         if (num.price < arr[i].price)
+         {
+            pos = i;
+            break;
+         }
+      }
+   }
+   else
+   { // DESC
+      for (int i = 0; i < size; i++)
+      {
+         if (num.price > arr[i].price)
          {
             pos = i;
             break;
